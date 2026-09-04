@@ -1,0 +1,85 @@
+# Real universities (mix of international + Indian, to encourage structural generalization)
+University of Oxford
+University of Cambridge
+Harvard University
+Massachusetts Institute of Technology
+Stanford University
+Yale University
+Princeton University
+Columbia University
+University of Chicago
+Cornell University
+University of Michigan
+University of California, Berkeley
+University of Delhi
+University of Mumbai
+Indian Institute of Technology Bombay
+Indian Institute of Technology Delhi
+Indian Institute of Technology Madras
+Indian Institute of Technology Kanpur
+University of Calcutta
+Jawaharlal Nehru University
+University of Madras
+Osmania University
+University of Hyderabad
+Bangalore University
+Savitribai Phule Pune University
+Anna University
+Banaras Hindu University
+Aligarh Muslim University
+University of Rajasthan
+Cochin University of Science and Technology
+National University of Singapore
+University of Melbourne
+University of Sydney
+University of Auckland
+University of Toronto
+McGill University
+London School of Economics and Political Science
+University College London
+Imperial College London
+King's College London
+University of Edinburgh
+University of Manchester
+Durham University
+University of Warwick
+Monash University
+# Fictional universities (diverse naming styles to prevent memorization)
+Northfield University
+Westbrook Institute of Technology
+Harrington College of Arts and Sciences
+Eastmoor University
+Silverdale University
+Crestwood Technical University
+Maplewood College of Science and Arts
+Ridgecrest University
+Sunvalley Institute of Technology
+Lakewood University
+Brightwood College
+Ashford University of Technology
+Millfield University
+Stonehurst College
+Greenhill University
+Redwood Institute of Management
+Clearwater University
+Ferndale College of Engineering
+Highfields University
+Brookside Institute of Technology
+Valleyview University
+Meadowbrook University
+Thornfield College
+Pinehurst University
+Oakwood Technical University
+Cedarwood Institute
+Willowbrook University
+Elmwood College
+Cliffside University
+Seaview Institute of Technology
+Moorland University
+Foxfield College
+Riverdale University
+Hillcrest College
+Lakeside University
+Bluewater Institute
+Mountainview University
+Springdale College of Arts and Sciences

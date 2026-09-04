@@ -1,0 +1,19 @@
+# Model checkpoints & weights (exceeds GitHub's 100MB limit, stored on Google Drive)
+checkpoints/
+*.safetensors
+*.bin
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter & virtual environments
+.ipynb_checkpoints/
+.env
+venv/
+env/
+
+# Datasets & temporary archives
+dataset/
+*.zip

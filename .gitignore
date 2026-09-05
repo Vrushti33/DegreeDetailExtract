@@ -17,3 +17,5 @@ env/
 # Datasets & temporary archives
 dataset/
 *.zip
+
+scratch/

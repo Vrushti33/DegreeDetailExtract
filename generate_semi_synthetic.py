@@ -183,20 +183,82 @@ def render_centered_block(
 
 # ── Semi-Synthetic Layout Engine ───────────────────────────────────────────────
 
-CERT_LEAD_INS = [
-    "This is to certify that",
-    "It is hereby certified that",
-    "The Senate of the University confers upon",
-    "Having completed all academic requirements, the University certifies that",
-    "Be it known that by authority of the Senate",
+# ── Realistic Ceremonial Prose & Layout Templates ─────────────────────────────
+
+PROSE_TEMPLATES = [
+    # 0. President of Council & Study Period (User's exact requested wording)
+    {
+        "type": "staged",
+        "intro": "We, the President of Council and Members of the Academic Senate, do hereby award unto",
+        "study": "for having studied for the prescribed period and passing the requisite examinations in",
+        "degree_lead": "the Degree of",
+        "closing": "The said degree has been awarded by the University and is offered to the candidate on",
+    },
+    # 1. Classic Commonwealth / Indian Executive Council
+    {
+        "type": "staged",
+        "intro": "The Chancellor, Vice-Chancellor and Members of the Executive Council certify that",
+        "study": "having studied for the approved curriculum and having satisfied the examiners with",
+        "degree_lead": "is admitted to the Degree of",
+        "closing": "The said degree is offered and conferred under the Common Seal of the University on",
+    },
+    # 2. Continuous Flowing Ceremonial Paragraph (President of Council)
+    {
+        "type": "flowing",
+        "text": (
+            "We, the President of Council and Members of the Faculty, award unto {student_name} "
+            "this diploma for passing the required examinations in {pass_class}, having studied "
+            "for the prescribed course in {course_name} with specialization in {specialization}. "
+            "The said degree has been awarded by the Senate of {university_name} and is offered "
+            "to the candidate on {issue_date} with all honors and privileges."
+        ),
+    },
+    # 3. Board of Regents / Trustees Award
+    {
+        "type": "staged",
+        "intro": "By the authority of the Board of Regents and the Faculty Council, be it known that",
+        "study": "has studied for the required academic terms and successfully passed all assessments in",
+        "degree_lead": "and is hereby granted the Degree of",
+        "closing": "The said degree is offered to the graduate on",
+    },
+    # 4. Continuous Flowing Academic Senate Declaration
+    {
+        "type": "flowing",
+        "text": (
+            "This is to certify that {student_name} has studied for the degree program at {university_name}, "
+            "and having fulfilled all requirements and passed the prescribed examinations in {pass_class}, "
+            "has been awarded the degree of {course_name} in {specialization}. The said degree is offered "
+            "to the scholar on {issue_date} by order of the Academic Senate."
+        ),
+    },
+    # 5. Formal Admission & Degree Offer Style
+    {
+        "type": "staged",
+        "intro": "Having fulfilled all requirements of the University Statutes, it is certified that",
+        "study": "having studied for the prescribed period and attained the grade of",
+        "degree_lead": "has been awarded by the Academic Council the Degree of",
+        "closing": "The said degree is offered and presented with all honours on",
+    },
+    # 6. Continuous Flowing President & Governors Style
+    {
+        "type": "flowing",
+        "text": (
+            "We, the President of Council and the Board of Governors of {university_name}, "
+            "hereby declare that {student_name}, having studied for the degree course and passed "
+            "the requisite examinations in {pass_class}, has been awarded the degree of {course_name} "
+            "({specialization}). The said degree is offered on {issue_date} under the Seal of the University."
+        ),
+    },
+    # 7. Council & Faculty Honors Style
+    {
+        "type": "staged",
+        "intro": "In testimony whereof, the Council and Faculty do hereby confer upon",
+        "study": "who has studied for the designated period and passed with merit in",
+        "degree_lead": "the Degree of",
+        "closing": "The said degree is offered and authenticated on",
+    },
 ]
 
-DEGREE_LEAD_INS = [
-    "has been admitted to the Degree of",
-    "is hereby awarded the Degree of",
-    "has been conferred the Degree of",
-    "having fulfilled all requirements is admitted to the Degree of",
-]
 
 def render_fields_onto_template(
     cleaned_bg: Image.Image,
@@ -204,85 +266,102 @@ def render_fields_onto_template(
     geometry: Dict[str, float],
     ink_color: Tuple[int, int, int],
     font_family: str = "serif",
-    lead_variant: int = 0
+    variant_idx: int = 0
 ) -> Image.Image:
     """
-    Renders the synthetic 7 fields onto the authentic certificate background.
+    Renders realistic ceremonial text containing natural language prose and
+    the 7 synthetic target fields onto the authentic certificate background.
     """
     img = cleaned_bg.copy()
     draw = ImageDraw.Draw(img)
 
     w = geometry["width"]
     h = geometry["height"]
-    x1 = geometry["x1"]
-    x2 = geometry["x2"]
     max_w = int(w * 0.76)
 
-    # Scale font sizes proportionally to certificate height
-    size_univ = max(16, int(h * 0.034))
-    size_lead = max(11, int(h * 0.020))
-    size_name = max(20, int(h * 0.042))
-    size_deg  = max(16, int(h * 0.030))
-    size_spec = max(13, int(h * 0.023))
-    size_cls  = max(12, int(h * 0.021))
-    size_bot  = max(11, int(h * 0.020))
+    tpl = PROSE_TEMPLATES[variant_idx % len(PROSE_TEMPLATES)]
+
+    # Relative typography sizing
+    size_univ = max(13, int(h * 0.033))
+    size_body = max(10, int(h * 0.021))
+    size_name = max(14, int(h * 0.038))
+    size_deg  = max(13, int(h * 0.029))
+    size_bold = max(11, int(h * 0.023))
+    size_bot  = max(9,  int(h * 0.019))
 
     font_univ = get_font_custom(font_family, size_univ, bold=True)
-    font_lead = get_font_custom(font_family, size_lead, italic=True)
+    font_body = get_font_custom(font_family, size_body)
+    font_lead = get_font_custom(font_family, size_body, italic=True)
     font_name = get_font_custom(font_family, size_name, bold=True)
-    font_deg  = get_font_custom(font_family, size_deg, bold=True)
-    font_spec = get_font_custom(font_family, size_spec)
-    font_cls  = get_font_custom(font_family, size_cls, bold=True)
+    font_deg  = get_font_custom(font_family, size_deg,  bold=True)
+    font_bold = get_font_custom(font_family, size_bold, bold=True)
     font_bot  = get_font_custom(font_family, size_bot)
 
-    # Pick phrasing
-    cert_intro = CERT_LEAD_INS[lead_variant % len(CERT_LEAD_INS)]
-    degree_intro = DEGREE_LEAD_INS[lead_variant % len(DEGREE_LEAD_INS)]
+    curr_y = int(h * 0.22)
 
-    # Dynamic vertical layout calculation
-    start_y = int(h * 0.23)
-    curr_y = start_y
-
-    # 1. University Name (if prominent in text area)
+    # 1. University Header
     curr_y = render_centered_block(draw, fields["university_name"], font_univ, curr_y, w, max_w, ink_color)
-    curr_y += int(h * 0.025)
+    curr_y += max(8, int(h * 0.020))
 
-    # 2. Certification Lead-in
-    curr_y = render_centered_block(draw, cert_intro, font_lead, curr_y, w, max_w, ink_color)
-    curr_y += int(h * 0.020)
+    if tpl["type"] == "flowing":
+        # ── Continuous Running Paragraph Style ────────────────────────────────
+        prose_text = tpl["text"].format(
+            student_name=fields["student_name"],
+            university_name=fields["university_name"],
+            course_name=fields["course_name"],
+            specialization=fields.get("specialization") or "General Studies",
+            pass_class=fields["pass_class"],
+            issue_date=fields["issue_date"],
+        )
+        curr_y += max(6, int(h * 0.015))
+        curr_y = render_centered_block(
+            draw, prose_text, font_body, curr_y, w, max_w, ink_color, line_spacing=max(4, int(h * 0.008))
+        )
 
-    # 3. Student Name (Large, Bold, Prominent)
-    curr_y = render_centered_block(draw, fields["student_name"], font_name, curr_y, w, max_w, ink_color)
-    curr_y += int(h * 0.025)
+    else:
+        # ── Staged Ceremonial Prose Style ─────────────────────────────────────
+        spacing = max(4, int(h * 0.014))
 
-    # 4. Degree Lead-in
-    curr_y = render_centered_block(draw, degree_intro, font_lead, curr_y, w, max_w, ink_color)
-    curr_y += int(h * 0.015)
+        # "We, the President of Council... award unto"
+        curr_y = render_centered_block(draw, tpl["intro"], font_lead, curr_y, w, max_w, ink_color)
+        curr_y += spacing
 
-    # 5. Course Name (Degree)
-    curr_y = render_centered_block(draw, fields["course_name"], font_deg, curr_y, w, max_w, ink_color)
-    curr_y += int(h * 0.012)
+        # [Student Name] (Prominent Callout)
+        curr_y = render_centered_block(draw, fields["student_name"], font_name, curr_y, w, max_w, ink_color)
+        curr_y += spacing
 
-    # 6. Specialization
-    if fields.get("specialization"):
-        spec_text = f"in {fields['specialization']}"
-        curr_y = render_centered_block(draw, spec_text, font_spec, curr_y, w, max_w, ink_color)
-        curr_y += int(h * 0.016)
+        # "for having studied for the prescribed period and passing the requisite examinations in"
+        curr_y = render_centered_block(draw, tpl["study"], font_body, curr_y, w, max_w, ink_color)
+        curr_y += max(2, spacing // 2)
 
-    # 7. Pass Class Award
-    cls_text = f"Class Awarded: {fields['pass_class']}"
-    curr_y = render_centered_block(draw, cls_text, font_cls, curr_y, w, max_w, ink_color)
+        # [Pass Class] (Bold)
+        curr_y = render_centered_block(draw, fields["pass_class"], font_bold, curr_y, w, max_w, ink_color)
+        curr_y += max(2, spacing // 2)
 
-    # 8. Bottom Row: Issue Date (left) and Authority Name (right)
+        # "the Degree of"
+        curr_y = render_centered_block(draw, tpl["degree_lead"], font_lead, curr_y, w, max_w, ink_color)
+        curr_y += max(2, spacing // 2)
+
+        # [Course Name] in [Specialization]
+        degree_line = fields["course_name"]
+        if fields.get("specialization"):
+            degree_line += f" in {fields['specialization']}"
+        curr_y = render_centered_block(draw, degree_line, font_deg, curr_y, w, max_w, ink_color)
+        curr_y += spacing
+
+        # "The said degree has been awarded by... and is offered on [Date]"
+        closing_text = f"{tpl['closing']} {fields['issue_date']}."
+        curr_y = render_centered_block(draw, closing_text, font_body, curr_y, w, max_w, ink_color)
+
+    # ── Bottom Row: Date & Authority Signature ────────────────────────────────
     bot_y = int(h * 0.77)
     left_x = int(w * 0.12)
     right_x = int(w * 0.58)
 
-    date_label = f"Date of Issue: {fields['issue_date']}"
+    date_label = f"Date: {fields['issue_date']}"
     draw.text((left_x, bot_y), date_label, font=font_bot, fill=ink_color)
 
-    # Authority may wrap if long
-    auth_lines = wrap_text(fields["authority_name"], font_bot, int(w * 0.30), draw)
+    auth_lines = wrap_text(fields["authority_name"], font_bot, int(w * 0.32), draw)
     ay = bot_y
     for aline in auth_lines:
         draw.text((right_x, ay), aline, font=font_bot, fill=ink_color)
@@ -397,7 +476,7 @@ def generate_semi_synthetic_dataset(
                 geometry=t_data["geometry"],
                 ink_color=t_data["ink_color"],
                 font_family=font_family,
-                lead_variant=v
+                variant_idx=(t_idx * 5 + v)
             )
 
             # Optional subtle Albumentations augmentation

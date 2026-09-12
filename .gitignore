@@ -19,6 +19,9 @@ dataset/
 dataset_v2/
 preview_v2/
 semi_synth_certs/
+demo_v2_certs/
+cert_fonts/
 *.zip
 
 scratch/
+

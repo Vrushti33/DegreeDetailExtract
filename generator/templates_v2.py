@@ -59,41 +59,56 @@ def _sample_ink():
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _render_prose_body(draw, fonts, fields, y_start, ink, margin=80) -> int:
-    """Render the full ceremonial prose into the image. Returns y after last line."""
+    """Render the full ceremonial prose into the image. Returns y after last line.
+
+    Uses calligraphy-style fonts where available:
+    - Proclamation / proclamation label: antique_it (IM Fell Italic)
+    - Body paragraphs: antique (IM Fell English)
+    - Award line: display (Playfair Display Bold)
+    - Closing lines: antique (IM Fell English small)
+    """
     prose = get_random_prose(fields)
     y = y_start
     max_w = W - margin * 2
 
-    # Header lines (already drawn by templates above, but some prose has extra)
-    # Proclamation paragraph
+    # Use antique italic for proclamation (like a real printed diploma)
+    proc_font   = fonts.get("antique_it") or fonts["body_italic"]
+    body_font   = fonts.get("antique")    or fonts["body"]
+    award_font  = fonts.get("display")    or fonts["heading"]
+    close_font  = fonts.get("antique")    or fonts["small"]
+    script_font = fonts.get("script")     or fonts.get("geo_title") or fonts["title"]
+
     if prose.proclamation:
-        y = draw_centered_wrapped(draw, prose.proclamation, y, fonts["body_italic"], ink, max_w, spacing=6)
+        y = draw_centered_wrapped(draw, prose.proclamation, y, proc_font, ink, max_w, spacing=6)
         y += 14
 
-    # Recipient label
     if prose.recipient_label:
         draw_centered(draw, prose.recipient_label.upper(), y, fonts["label"], ink)
         y += 36
 
-    # Body paragraphs
     for para in prose.body_paragraphs:
+        p_clean = para.strip()
+        if p_clean == fields["student_name"].strip():
+            y += 6
+            h = draw_centered(draw, p_clean, y, script_font, ink)
+            y += h + 20
+            continue
+
         for line in para.split("\n"):
             line = line.strip()
             if not line:
                 y += 10
                 continue
-            y = draw_centered_wrapped(draw, line, y, fonts["body"], ink, max_w, spacing=5)
+            y = draw_centered_wrapped(draw, line, y, body_font, ink, max_w, spacing=5)
             y += 10
 
     y += 8
-    # Award line
     if prose.award_line:
         hline(draw, y, ink, width=1, margin=margin + 40)
         y += 14
-        draw_centered(draw, prose.award_line.upper(), y, fonts["heading"], ink)
+        draw_centered(draw, prose.award_line.upper(), y, award_font, ink)
         y += 42
 
-    # Closing lines
     if prose.closing_lines:
         hline(draw, y, ink, width=1, margin=margin + 40)
         y += 14
@@ -108,7 +123,8 @@ def _render_prose_body(draw, fonts, fields, y_start, ink, margin=80) -> int:
 #  Template 23 — Real-texture Parchment Prose
 # ══════════════════════════════════════════════════════════════════════════════
 def t23_texture_parchment_prose(fields: dict) -> Image.Image:
-    """Real paper texture background + ceremonial prose, classic parchment style."""
+    """Real paper texture background + ceremonial prose, classic parchment style.
+    Uses Great Vibes (script) for student name, Cinzel for university title."""
     BORDER = (139, 69, 19)
     base   = (253, 245, 220)
     ink    = _sample_ink() or (80, 40, 10)
@@ -123,14 +139,19 @@ def t23_texture_parchment_prose(fields: dict) -> Image.Image:
     for cx, cy in [(14, 14), (W - 14, 14), (14, H - 14), (W - 14, H - 14)]:
         draw.polygon([(cx, cy - 12), (cx + 12, cy), (cx, cy + 12), (cx - 12, cy)], fill=BORDER)
 
-    y = 60
-    for ln in wrap_text(draw, fields["university_name"].upper(), fonts["title"], W - 140):
-        y += draw_centered(draw, ln, y, fonts["title"], BORDER) + 6
+    y = 55
+    # University name in Cinzel (engraved Roman caps)
+    cinzel_font = fonts.get("cinzel") or fonts["title"]
+    for ln in wrap_text(draw, fields["university_name"].upper(), cinzel_font, W - 140):
+        y += draw_centered(draw, ln, y, cinzel_font, BORDER) + 6
     y += 8
     double_hline(draw, y, BORDER, gap=6, w1=3, w2=1, margin=60)
-    y += 28
-    draw_centered(draw, "OFFICIAL DEGREE CERTIFICATE", y, fonts["heading"], GOLDEN_BROWN)
-    y += 50
+    y += 20
+
+    # "OFFICIAL DEGREE CERTIFICATE" in Playfair Display bold
+    disp_font = fonts.get("display") or fonts["heading"]
+    draw_centered(draw, "OFFICIAL DEGREE CERTIFICATE", y, disp_font, GOLDEN_BROWN)
+    y += 52
 
     y = _render_prose_body(draw, fonts, fields, y, ink, margin=70)
 
@@ -149,7 +170,8 @@ def t23_texture_parchment_prose(fields: dict) -> Image.Image:
 #  Template 24 — Real-texture Navy Prose
 # ══════════════════════════════════════════════════════════════════════════════
 def t24_texture_navy_prose(fields: dict) -> Image.Image:
-    """Real paper texture with navy header/footer bands + full prose body."""
+    """Real paper texture with navy header/footer bands + full prose body.
+    Uses Cinzel for university name in header, antique italic for proclamation."""
     base = (248, 250, 255)
     ink  = _sample_ink() or (20, 20, 60)
 
@@ -163,10 +185,12 @@ def t24_texture_navy_prose(fields: dict) -> Image.Image:
     draw.rectangle([0, H - 70, W, H], fill=DARK_NAVY)
     draw.line([(0, H - 70), (W, H - 70)], fill=BRIGHT_GOLD, width=2)
 
-    y = 26
-    for ln in wrap_text(draw, fields["university_name"].upper(), fonts["subtitle"], W - 100):
-        y += draw_centered(draw, ln, y, fonts["subtitle"], TEXT_WHITE) + 5
-    draw_centered(draw, "DEGREE CERTIFICATE", y, fonts["heading"], BRIGHT_GOLD)
+    y = 22
+    cinzel_font = fonts.get("cinzel") or fonts["subtitle"]
+    for ln in wrap_text(draw, fields["university_name"].upper(), cinzel_font, W - 100):
+        y += draw_centered(draw, ln, y, cinzel_font, TEXT_WHITE) + 5
+    disp_font = fonts.get("display") or fonts["heading"]
+    draw_centered(draw, "DEGREE CERTIFICATE", y, disp_font, BRIGHT_GOLD)
     y = 192
 
     y = _render_prose_body(draw, fonts, fields, y, ink, margin=80)
@@ -183,7 +207,8 @@ def t24_texture_navy_prose(fields: dict) -> Image.Image:
 #  Template 25 — Real-texture Burgundy Prose
 # ══════════════════════════════════════════════════════════════════════════════
 def t25_texture_burgundy_prose(fields: dict) -> Image.Image:
-    """Real paper background + burgundy border + ceremonial proclamation style."""
+    """Real paper background + burgundy border + ceremonial proclamation style.
+    Student name rendered in Great Vibes script calligraphy."""
     base = (255, 252, 248)
     ink  = _sample_ink() or (80, 10, 30)
 
@@ -196,15 +221,17 @@ def t25_texture_burgundy_prose(fields: dict) -> Image.Image:
     for cx, cy in [(16, 16), (W - 16, 16), (16, H - 16), (W - 16, H - 16)]:
         draw.ellipse([cx - 10, cy - 10, cx + 10, cy + 10], fill=BURGUNDY)
 
-    y = 60
-    draw_centered(draw, "UNIVERSITY DEGREE CERTIFICATE", y, fonts["heading"], GOLDEN_BROWN)
+    y = 55
+    disp_font = fonts.get("display") or fonts["heading"]
+    draw_centered(draw, "UNIVERSITY DEGREE CERTIFICATE", y, disp_font, GOLDEN_BROWN)
     y += 42
     double_hline(draw, y, BURGUNDY, gap=7, w1=3, w2=1, margin=60)
-    y += 28
+    y += 26
 
-    for ln in wrap_text(draw, fields["university_name"].upper(), fonts["title"], W - 130):
-        y += draw_centered(draw, ln, y, fonts["title"], BURGUNDY) + 6
-    y += 16
+    cinzel_font = fonts.get("cinzel") or fonts["title"]
+    for ln in wrap_text(draw, fields["university_name"].upper(), cinzel_font, W - 130):
+        y += draw_centered(draw, ln, y, cinzel_font, BURGUNDY) + 6
+    y += 14
     double_hline(draw, y, BURGUNDY, gap=7, w1=3, w2=1, margin=60)
     y += 30
 

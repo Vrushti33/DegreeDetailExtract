@@ -605,7 +605,261 @@ def prose_gothic_proclamation(fields: dict) -> ProseBlocks:
     )
 
 
-# ── Registry — all 16 prose templates ────────────────────────────────────────
+# ── Template 17 — "This is to certify that" explicit name-first ───────────────
+def prose_certify_that(fields: dict) -> ProseBlocks:
+    """Explicit 'This is to certify that [name]...' pattern — strongest name anchor."""
+    pc = _pass_suffix(fields)
+    return ProseBlocks(
+        header_lines=[
+            fields["university_name"].upper(),
+            "CERTIFICATE OF DEGREE",
+        ],
+        proclamation=(
+            f"This is to certify that {fields['student_name']}, "
+            f"a student of {fields['university_name']}, "
+            f"has successfully completed all requirements."
+        ),
+        recipient_label="",
+        body_paragraphs=[
+            (
+                f"{fields['student_name']} has been examined for the Degree of "
+                f"{fields['course_name']} in the discipline of {fields['specialization']} "
+                f"and is hereby certified to have passed all prescribed examinations{pc}."
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            f"Signed this {fields['issue_date']} by {fields['authority_name']}.",
+        ],
+    )
+
+
+# ── Template 18 — "Has been examined for" degree-explicit ─────────────────────
+def prose_examined_for(fields: dict) -> ProseBlocks:
+    """'Has been examined for the degree of...' — strong course anchor."""
+    pc = _pass_suffix(fields)
+    return ProseBlocks(
+        header_lines=[
+            "CERTIFICATE OF ACADEMIC AWARD",
+            fields["university_name"].upper(),
+        ],
+        proclamation=(
+            f"The undersigned authority of {fields['university_name']} "
+            "hereby certifies as follows:"
+        ),
+        recipient_label="STUDENT",
+        body_paragraphs=[
+            (
+                f"{fields['student_name']} has been examined for the Degree of "
+                f"{fields['course_name']}, specialization in {fields['specialization']}, "
+                f"and has been found qualified to receive the said degree{pc}."
+            ),
+            (
+                "The candidate has fulfilled all academic requirements as laid down "
+                "by the University Examination Board."
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            f"Certified on {fields['issue_date']}.",
+            f"{fields['authority_name']}",
+            "Registrar, Office of Academic Affairs",
+        ],
+    )
+
+
+# ── Template 19 — "Is accredited for" degree + specialization ─────────────────
+def prose_accredited_for(fields: dict) -> ProseBlocks:
+    """'Is accredited for...' — model learns course from 'accredited for' context."""
+    pc = _pass_suffix(fields)
+    authority_title = random.choice([
+        "Dean of Studies", "Academic Registrar", "Chancellor",
+        "Vice Chancellor", "Principal",
+    ])
+    return ProseBlocks(
+        header_lines=[
+            fields["university_name"].upper(),
+            "DEGREE CERTIFICATION",
+        ],
+        proclamation=(
+            "To Whom It May Concern,"
+        ),
+        recipient_label="",
+        body_paragraphs=[
+            (
+                f"This is to declare that {fields['student_name']}, "
+                f"enrolled at {fields['university_name']}, "
+                f"is accredited for the award of {fields['course_name']} "
+                f"with specialization in {fields['specialization']}{pc}."
+            ),
+            (
+                "The above-named candidate has duly completed all coursework, "
+                "practical examinations, and thesis requirements."
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            f"Date of Issue: {fields['issue_date']}",
+            f"Authorized by: {fields['authority_name']}, {authority_title}",
+        ],
+    )
+
+
+# ── Template 20 — Explicit "student of [university]" + date near authority ────
+def prose_student_of(fields: dict) -> ProseBlocks:
+    """University named in body as 'student of [university_name]'."""
+    pc = _pass_suffix(fields)
+    return ProseBlocks(
+        header_lines=[
+            "OFFICIAL DEGREE CERTIFICATE",
+        ],
+        proclamation=(
+            f"We hereby certify that {fields['student_name']}, "
+            f"a student of {fields['university_name']}, "
+            "has duly completed the prescribed course of study."
+        ),
+        recipient_label="",
+        body_paragraphs=[
+            (
+                f"The said student has satisfactorily completed the programme of "
+                f"{fields['course_name']}, majoring in {fields['specialization']}, "
+                f"and is entitled to the degree herein conferred{pc}."
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            f"Signed by {fields['authority_name']} on {fields['issue_date']}.",
+            fields["university_name"].upper(),
+        ],
+    )
+
+
+# ── Template 21 — Authority name anchored to signature block ──────────────────
+def prose_authority_signed(fields: dict) -> ProseBlocks:
+    """Authority name placed explicitly in signature context: 'Signed — [name], [title]'."""
+    pc = _pass_suffix(fields)
+    titles = ["Registrar", "Dean", "Chancellor", "Principal", "Academic Director"]
+    title = random.choice(titles)
+    return ProseBlocks(
+        header_lines=[
+            fields["university_name"].upper(),
+            f"Established under the University Grants Commission",
+        ],
+        proclamation=(
+            "The Academic Council of this University declares that:"
+        ),
+        recipient_label="CANDIDATE",
+        body_paragraphs=[
+            (
+                f"{fields['student_name']} has completed the {fields['course_name']} programme "
+                f"(specialization: {fields['specialization']}) and has been awarded "
+                f"the degree{pc} by {fields['university_name']}."
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            f"Date: {fields['issue_date']}",
+            "─" * 30,
+            f"{fields['authority_name']}",
+            f"{title}, {fields['university_name']}",
+        ],
+    )
+
+
+# ── Template 22 — "Degree is offered / conferred" explicit phrase ──────────────
+def prose_degree_offered(fields: dict) -> ProseBlocks:
+    """'The degree is offered to...' — explicit degree-offer contextual phrase."""
+    pc = _pass_suffix(fields)
+    return ProseBlocks(
+        header_lines=[
+            fields["university_name"].upper(),
+            "OFFICE OF THE REGISTRAR",
+            "CERTIFICATE OF CONFERRAL",
+        ],
+        proclamation=(
+            f"On behalf of the Senate of {fields['university_name']}, "
+            "this certificate is issued to confirm that:"
+        ),
+        recipient_label="",
+        body_paragraphs=[
+            (
+                f"The Degree of {fields['course_name']} in {fields['specialization']} "
+                f"is hereby conferred upon {fields['student_name']}{pc}."
+            ),
+            (
+                f"The degree is offered to {_him_her()} in recognition of the "
+                "satisfactory completion of all academic obligations."
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            f"In witness whereof, this certificate is issued on {fields['issue_date']}.",
+            f"— {fields['authority_name']}, Registrar",
+        ],
+    )
+
+
+# ── Template 23 — University name at BOTTOM (breaks top-position bias) ─────────
+def prose_university_bottom(fields: dict) -> ProseBlocks:
+    """University name appears only at the bottom, breaking top-header positional bias."""
+    pc = _pass_suffix(fields)
+    return ProseBlocks(
+        header_lines=[
+            "DEGREE CERTIFICATE",
+            f"Academic Year {random.randint(2000, 2023)}–{random.randint(2001, 2024)}",
+        ],
+        proclamation=(
+            "This is to certify that the following candidate has fulfilled all "
+            "requirements for the conferral of the degree named hereunder:"
+        ),
+        recipient_label="CANDIDATE NAME",
+        body_paragraphs=[
+            (
+                f"{fields['student_name']} has completed the course of "
+                f"{fields['course_name']} (specialization: {fields['specialization']}){pc}."
+            ),
+            (
+                f"The above degree is conferred by {fields['university_name']} "
+                f"on {fields['issue_date']}."
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            f"Authorized Signatory: {fields['authority_name']}",
+            "",
+            fields["university_name"].upper(),
+        ],
+    )
+
+
+# ── Template 24 — Short terse cert, university name inline ───────────────────
+def prose_terse_inline(fields: dict) -> ProseBlocks:
+    """Terse single-paragraph style; university name appears inline mid-paragraph."""
+    pc = _pass_suffix(fields)
+    return ProseBlocks(
+        header_lines=[
+            "CERTIFICATE",
+        ],
+        proclamation="",
+        recipient_label="",
+        body_paragraphs=[
+            (
+                f"This certifies that {fields['student_name']} "
+                f"of {fields['university_name']} "
+                f"has been awarded the Degree of {fields['course_name']}, "
+                f"specialization in {fields['specialization']}{pc}, "
+                f"on {fields['issue_date']}. "
+                f"Certified by {fields['authority_name']}."
+            ),
+        ],
+        award_line="",
+        closing_lines=[
+            fields["university_name"].upper(),
+        ],
+    )
+
+
+# ── Registry — all 24 prose templates ────────────────────────────────────────
 PROSE_TEMPLATES = [
     prose_president_council,
     prose_board_of_management,
@@ -624,6 +878,15 @@ PROSE_TEMPLATES = [
     prose_name_at_top,
     prose_label_value_block,
     prose_gothic_proclamation,
+    # v4 anti-hallucination additions — explicit contextual phrases:
+    prose_certify_that,        # "This is to certify that [name], a student of [university]"
+    prose_examined_for,        # "Has been examined for the Degree of [course]"
+    prose_accredited_for,      # "Is accredited for [course] with specialization in [spec]"
+    prose_student_of,          # "student of [university]" inline; university at bottom closing
+    prose_authority_signed,    # Authority name anchored to signature title block
+    prose_degree_offered,      # "The degree is offered to..." explicit conferral phrase
+    prose_university_bottom,   # University name at BOTTOM only — breaks top-header bias
+    prose_terse_inline,        # All fields inline single paragraph
 ]
 
 
@@ -633,3 +896,4 @@ def get_random_prose(fields: dict) -> ProseBlocks:
 
 
 __all__ = ["ProseBlocks", "PROSE_TEMPLATES", "get_random_prose"]
+

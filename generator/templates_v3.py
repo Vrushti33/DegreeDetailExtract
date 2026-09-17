@@ -62,14 +62,31 @@ def _sample_ink(fallback=(30, 20, 10)):
 
 # ── Shared prose renderer (v3 extended) ──────────────────────────────────────
 
+_SPACING_CHOICES = [1.4, 1.6, 1.8, 2.0, 2.4]
+
+
+def get_random_line_spacing() -> float:
+    """Return a random line-spacing multiplier in [1.4, 2.4].
+
+    Each certificate gets different inter-block whitespace, preventing the Donut
+    model from memorising field positions instead of reading contextual phrases.
+    """
+    return random.choice(_SPACING_CHOICES)
+
+
 def _render_prose_body_v3(draw, fonts, fields, prose, y_start, ink,
-                           margin=80, line_spacing=1.0) -> int:
+                           margin=80, line_spacing=None) -> int:
     """Render the prose blocks. Handles name_at_top, all_cursive, absent pass_class.
 
     Parameters
     ----------
-    line_spacing : float  Extra multiplier on line height (1.0–1.8 for real cert feel)
+    line_spacing : float | None
+        Extra multiplier on line height.  If None, a value is randomly chosen
+        from [1.4, 1.6, 1.8, 2.0, 2.4] so every cert looks different.
     """
+    if line_spacing is None:
+        line_spacing = get_random_line_spacing()
+
     max_w = W - margin * 2
     y = y_start
 

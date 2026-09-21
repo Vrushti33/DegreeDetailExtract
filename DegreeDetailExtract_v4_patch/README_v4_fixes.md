@@ -95,6 +95,60 @@ here — re-enabled it anyway below since it's still a real robustness gap for
    narrows it, is a legitimate and genuinely interesting result for an ML
    class, not something to hide.
 
+## Round 2 fixes (naming collision + free-tier robustness)
+
+After shipping the first v4 patch, a naming problem was caught: the notebook
+still saved everything to `checkpoints_v3` / `dataset_v3` paths on Drive —
+identical to the original v3 run. Re-reading the *entire* notebook cell by
+cell (not just the cells touched in round 1) to check for this turned up
+several more real bugs, all now fixed:
+
+1. **Path collision** — every dataset/checkpoint path renamed
+   `..._v3` → `..._v4` throughout (dataset folder, dataset archive,
+   checkpoint folder). Your original v3 dataset/checkpoints on Drive are
+   left untouched, so you still have them for a "before" comparison in your
+   report if you want one.
+2. **Section 4 (Resume) had its own, independent copy of `build_target()`**
+   that I'd missed patching in round 1 — it still had the broken closing tag.
+   Since Colab free tier disconnects are common, this cell runs often; left
+   unfixed, a resumed run would have silently reintroduced the original bug.
+3. **False-positive "dataset is complete" check.** The old check
+   (`count >= 1000`) would wrongly treat an interrupted generation run as
+   finished, since generation writes records incrementally and a partial run
+   easily exceeds 1000 while still being far short of the full ~4,000 train
+   records. Free tier makes this a real risk (generation takes 18–28 min).
+   Now checks against ~3,920 (98% of the expected 4,000) instead. Applied to
+   both Section 2 and Section 4's dataset-restore logic.
+4. **Section 7's fine-tune cell wasn't self-contained** — it referenced a
+   variable (`REAL_BASE`) defined only in the previous cell, so it would
+   break with a confusing error if run after a disconnect or run standalone.
+   Now redefines everything it needs itself, matching the pattern already
+   used by every other major cell in the notebook. Also added a clear error
+   if the real-labeled training set ends up empty.
+5. **Optimizer/scheduler state now persists across resumes.** Previously,
+   every time Section 4 ran (likely more than once per training run on free
+   tier), it restarted the cosine LR schedule from scratch over just the
+   remaining epochs instead of continuing the original one. Checkpoints now
+   save `optimizer.pt`/`scheduler.pt`, and Section 4 restores them when
+   present.
+6. **Free-tier Drive quota risk from fix #5.** Saving full AdamW optimizer
+   state every epoch is expensive — roughly 1.6GB per save (about 2x the
+   model weights, since Adam keeps two moment buffers per parameter).
+   Unpruned, 10 epochs would have used **~24GB**, blowing past a free
+   Google account's 15GB total quota (shared with Gmail/Photos) by itself.
+   Fixed with a retention policy: only the most recent epoch keeps its
+   optimizer/scheduler state (the only one ever resumed from); epoch model
+   folders older than the last 2 are deleted (verified with a simulated
+   10-epoch run); and the `best/` copy has its optimizer state stripped
+   entirely, since it's only ever used for inference. Estimated peak usage
+   is now **~5–6GB** for a full run.
+
+All of these were verified, not just reasoned about: the tag-building/regex
+round-trip was executed against a realistic sample record, every code cell
+was syntax-checked, and the pruning logic was run against a simulated
+10-epoch checkpoint sequence to confirm it keeps exactly what's needed and
+nothing more.
+
 ## What this doesn't fix (things to consider if accuracy is still weak after this)
 
 - **Visual style gap**: your synthetic templates use abstract shapes as

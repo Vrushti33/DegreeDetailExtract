@@ -17,6 +17,9 @@ from faker import Faker
 fake = Faker()
 
 # ── pass_class: expanded, real-world vocabulary ───────────────────────────────
+# v4: added Third Class / Division-style grades, which are extremely common on
+# real Indian/Commonwealth-style degree certificates and were MISSING before —
+# any real certificate using these terms was guaranteed to fail extraction.
 PASS_CLASSES = [
     "Distinction",
     "First Class",
@@ -25,10 +28,17 @@ PASS_CLASSES = [
     "Second Class Lower Division",
     "Second Class",
     "Upper Second Class",
+    "Third Class",
+    "Third Division",
+    "Second Division",
+    "First Division",
     "Pass",
+    "Pass Class",
     "Pass with Credit",
     "Honours",
     "Merit",
+    "Class II Division I",
+    "Class II Division II",
     "Magna Cum Laude",
     "Summa Cum Laude",
     "With Credit",
@@ -198,6 +208,64 @@ def _load_university_names():
     return _UNIVERSITY_NAMES
 
 
+# ── v4: OPEN-VOCABULARY university name generation ────────────────────────────
+# Why this exists: with only ~85 fixed names (the old behaviour), each name was
+# seen ~65 times across the dataset. That is few enough distinct values that the
+# model can simply memorise "pick the closest of these 85 strings" instead of
+# learning to genuinely read arbitrary text off the image. Any real university
+# name not in that list (e.g. "University of Calicut") was structurally
+# impossible to extract correctly. Mixing in procedurally generated, never-
+# repeated names forces the model to actually read pixels instead of recalling
+# a shortlist.
+_UNIV_NAME_PATTERNS = [
+    lambda: f"University of {fake.city()}",
+    lambda: f"{fake.city()} University",
+    lambda: f"{fake.last_name()} University",
+    lambda: f"{fake.last_name()} Institute of Technology",
+    lambda: f"{fake.city()} Institute of Technology",
+    lambda: f"{fake.last_name()} College of "
+            f"{random.choice(['Engineering', 'Arts and Science', 'Commerce', 'Medicine', 'Law'])}",
+    lambda: f"{fake.state()} State University",
+    lambda: f"National University of {fake.city()}",
+    lambda: f"{fake.city()} Institute of "
+            f"{random.choice(['Science', 'Technology', 'Management', 'Design'])}",
+    lambda: f"{fake.last_name()}-{fake.last_name()} University",
+]
+
+
+def _random_university_name() -> str:
+    """~50% curated real-ish names, ~50% procedurally generated & never repeated.
+
+    The mix matters: curated names give the model realistic institution-name
+    *style*, while the procedural half guarantees it can never simply memorise
+    a closed set, since these are freshly random every call.
+    """
+    if random.random() < 0.50:
+        return random.choice(_load_university_names())
+    return random.choice(_UNIV_NAME_PATTERNS)()
+
+
+# ── v4: VARIED authority_name formatting ───────────────────────────────────────
+# Why this exists: the old code ALWAYS built this field as "{title}, {name}" —
+# a single rigid shape across 100% of training examples. The model learned that
+# shape as a hard rule rather than reading whatever is actually on the
+# certificate (which might be just a title, just a name, or a different layout
+# entirely — e.g. a "Vice Chancellor" label with a separately-placed signer
+# name, as on many real certificates).
+def _random_authority_name() -> str:
+    title = random.choice(_AUTHORITY_TITLES)
+    name = fake.name()
+    fmt = random.choice([
+        f"{title}, {name}",
+        f"{name}, {title}",
+        f"{name} ({title})",
+        title,      # title only — common on real signature blocks
+        name,       # name only
+        f"{title}",
+    ])
+    return fmt
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def generate_fields() -> Dict[str, str]:
@@ -219,8 +287,6 @@ def generate_fields() -> Dict[str, str]:
     dt = _DATE_START + timedelta(days=random.randint(0, _DATE_RANGE_DAYS))
     issue_date = _format_date(dt)
 
-    authority_title = random.choice(_AUTHORITY_TITLES)
-
     # pass_class: absent in ~30% of certificates
     if random.random() < 0.30:
         pass_class = ""
@@ -229,10 +295,10 @@ def generate_fields() -> Dict[str, str]:
 
     return {
         "student_name":    fake.name(),
-        "university_name": random.choice(_load_university_names()),
+        "university_name": _random_university_name(),
         "course_name":     course_name,
         "specialization":  random.choice(SPECIALIZATIONS),
         "pass_class":      pass_class,
-        "authority_name":  f"{authority_title}, {fake.name()}",
+        "authority_name":  _random_authority_name(),
         "issue_date":      issue_date,
     }

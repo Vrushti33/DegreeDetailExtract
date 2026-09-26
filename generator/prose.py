@@ -859,7 +859,204 @@ def prose_terse_inline(fields: dict) -> ProseBlocks:
     )
 
 
-# ── Registry — all 24 prose templates ────────────────────────────────────────
+# ── v5: helper for optional specialization phrase ────────────────────────────────────
+def _spec_phrase_v5(fields: dict) -> str:
+    s = fields.get('specialization', '')
+    return f' in {s}' if s else ''
+
+
+# ── v5 new templates — based on real certificate pattern analysis ───────────────
+
+def prose_has_been_awarded(fields: dict) -> ProseBlocks:
+    """'...has been awarded the degree of...' pattern from real certs.
+
+    v5: User observed model hallucinating when it saw 'has been awarded'.
+    This template explicitly trains: has been awarded -> degree name context.
+    """
+    pc = _pass_suffix(fields)
+    sp = _spec_phrase_v5(fields)
+    return ProseBlocks(
+        header_lines=[
+            fields['university_name'].upper(),
+            'DEGREE CERTIFICATE',
+        ],
+        proclamation=(
+            f'This is to certify that the following candidate, a student of '
+            f'{fields["university_name"]},'
+        ),
+        recipient_label='HAS BEEN AWARDED',
+        body_paragraphs=[
+            (
+                f'{fields["student_name"]} has been awarded the Degree of '
+                f'{fields["course_name"]}{sp}{pc}.'
+            ),
+            f'This degree was conferred on {fields["issue_date"]}.',
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=['Given under the seal of the University.'],
+    )
+
+
+def prose_of_the_university(fields: dict) -> ProseBlocks:
+    """'...student of the [university]...' — trains university after "of" context.
+
+    v5: User observed model failing to extract university name when preceded
+    by 'of the' pattern. This explicitly trains that contextual association.
+    """
+    pc = _pass_suffix(fields)
+    sp = _spec_phrase_v5(fields)
+    return ProseBlocks(
+        header_lines=['DEGREE CERTIFICATE'],
+        proclamation='',
+        recipient_label='',
+        body_paragraphs=[
+            (
+                f'This is to certify that {fields["student_name"]}, '
+                f'a student of the {fields["university_name"]}, '
+                f'has satisfactorily completed the requirements for the '
+                f'Degree of {fields["course_name"]}{sp}.'
+            ),
+            (
+                f'The said candidate has been duly examined and declared to have '
+                f'passed{pc}. '
+                f'Date of award: {fields["issue_date"]}.'
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            fields['authority_name'] if fields.get('authority_name') else 'Vice-Chancellor',
+            fields['university_name'],
+        ],
+    )
+
+
+def prose_written_date_signed(fields: dict) -> ProseBlocks:
+    """Date appears explicitly near the signature block.
+
+    v5: Teaches the model that written-out dates near signatures = issue_date.
+    e.g. 'Signed on the 15th day of the month June, two thousand and nineteen'.
+    """
+    pc = _pass_suffix(fields)
+    sp = _spec_phrase_v5(fields)
+    authority = fields.get('authority_name') or 'Vice-Chancellor'
+    return ProseBlocks(
+        header_lines=[
+            fields['university_name'].upper(),
+            'OFFICE OF THE REGISTRAR',
+        ],
+        proclamation=f'The {fields["university_name"]} hereby certifies that:',
+        recipient_label='',
+        body_paragraphs=[
+            (
+                f'{fields["student_name"]} has been duly enrolled as a student of '
+                f'this university and has completed all prescribed requirements '
+                f'for the {fields["course_name"]}{sp}{pc}.'
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[
+            f'Signed on {fields["issue_date"]}',
+            authority,
+        ],
+    )
+
+
+def prose_title_only_authority(fields: dict) -> ProseBlocks:
+    """Authority shown as title label only (no person name).
+
+    v5: Real-world analysis: 54/61 real certs had authority_name empty
+    or title-only ('Vice-Chancellor'). The model must learn that a title
+    label below the signature block IS the authority field.
+    """
+    pc = _pass_suffix(fields)
+    sp = _spec_phrase_v5(fields)
+    authority = fields.get('authority_name') or random.choice([
+        'Vice-Chancellor', 'Registrar', 'Chancellor', 'Principal',
+        'Controller of Examinations', 'Dean of Academic Affairs',
+    ])
+    return ProseBlocks(
+        header_lines=[fields['university_name'].upper()],
+        proclamation=(
+            f'We, the {authority} of {fields["university_name"]}, '
+            'do hereby certify that:'
+        ),
+        recipient_label='',
+        body_paragraphs=[
+            (
+                f'{fields["student_name"]} having been duly enrolled in the '
+                f'{fields["course_name"]}{sp} programme '
+                f'at this University has been examined and declared to have passed{pc}.'
+            ),
+            (
+                f'This certificate is issued on {fields["issue_date"]} under the '
+                f'authority of {fields["university_name"]}.'
+            ),
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[f'({authority})'],
+    )
+
+
+def prose_no_specialization(fields: dict) -> ProseBlocks:
+    """Template for courses with no specialization.
+
+    v5: BCA, MBBS, BBA, LLB, MBA etc. have no specialization on real certs.
+    Without templates like this, model hallucates specialization for these.
+    """
+    pc = _pass_suffix(fields)
+    return ProseBlocks(
+        header_lines=[
+            fields['university_name'].upper(),
+            'CONVOCATION CERTIFICATE',
+        ],
+        proclamation=f'The {fields["university_name"]} is pleased to confer the degree of',
+        recipient_label='',
+        body_paragraphs=[
+            (
+                f'{fields["course_name"]} upon {fields["student_name"]}, '
+                f'who has fulfilled all requirements of the programme{pc}.'
+            ),
+            f'Awarded on {fields["issue_date"]}.',
+        ],
+        award_line=_pass_award_line(fields),
+        closing_lines=[fields.get('authority_name') or 'Vice-Chancellor'],
+    )
+
+
+def prose_label_grid_real_style(fields: dict) -> ProseBlocks:
+    """Structured label-value format matching real South Asian certificates.
+
+    v5: Indian university certs often use:
+        Name of Student      : Unnati Kiran Shah
+        Name of University   : ...
+        Course               : ...
+        Date of Issue        : ...
+    This teaches the model to correctly read label-prefixed field values.
+    """
+    sp = _spec_phrase_v5(fields)
+    pc = fields.get('pass_class', '')
+    authority = fields.get('authority_name') or ''
+    auth_line = f'Signed by: {authority}' if authority else 'Vice-Chancellor'
+    return ProseBlocks(
+        header_lines=[
+            fields['university_name'].upper(),
+            'DEGREE / CONVOCATION CERTIFICATE',
+        ],
+        proclamation='',
+        recipient_label='',
+        body_paragraphs=[
+            f'Name of Student      :  {fields["student_name"]}',
+            f'Name of University   :  {fields["university_name"]}',
+            f'Course / Programme   :  {fields["course_name"]}{sp}',
+            f'Class of Award       :  {pc if pc else "N/A"}',
+            f'Date of Award        :  {fields["issue_date"]}',
+        ],
+        award_line='',
+        closing_lines=[auth_line],
+    )
+
+
+# ── Registry — all 30 prose templates (24 original + 6 v5) ─────────────────────
 PROSE_TEMPLATES = [
     prose_president_council,
     prose_board_of_management,
@@ -878,15 +1075,22 @@ PROSE_TEMPLATES = [
     prose_name_at_top,
     prose_label_value_block,
     prose_gothic_proclamation,
-    # v4 anti-hallucination additions — explicit contextual phrases:
-    prose_certify_that,        # "This is to certify that [name], a student of [university]"
-    prose_examined_for,        # "Has been examined for the Degree of [course]"
-    prose_accredited_for,      # "Is accredited for [course] with specialization in [spec]"
-    prose_student_of,          # "student of [university]" inline; university at bottom closing
-    prose_authority_signed,    # Authority name anchored to signature title block
-    prose_degree_offered,      # "The degree is offered to..." explicit conferral phrase
-    prose_university_bottom,   # University name at BOTTOM only — breaks top-header bias
-    prose_terse_inline,        # All fields inline single paragraph
+    # v4 anti-hallucination additions:
+    prose_certify_that,
+    prose_examined_for,
+    prose_accredited_for,
+    prose_student_of,
+    prose_authority_signed,
+    prose_degree_offered,
+    prose_university_bottom,
+    prose_terse_inline,
+    # v5 new — from real certificate pattern analysis:
+    prose_has_been_awarded,         # "has been awarded the degree of..."
+    prose_of_the_university,        # "student of the [university]..."
+    prose_written_date_signed,      # written-out date near signature
+    prose_title_only_authority,     # authority shown as title only
+    prose_no_specialization,        # course without specialization
+    prose_label_grid_real_style,    # label: value grid (South Asian style)
 ]
 
 
@@ -895,5 +1099,4 @@ def get_random_prose(fields: dict) -> ProseBlocks:
     return random.choice(PROSE_TEMPLATES)(fields)
 
 
-__all__ = ["ProseBlocks", "PROSE_TEMPLATES", "get_random_prose"]
-
+__all__ = ['ProseBlocks', 'PROSE_TEMPLATES', 'get_random_prose']

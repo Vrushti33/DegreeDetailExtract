@@ -1,4 +1,5 @@
-# Real universities (mix of international + Indian, to encourage structural generalization)
+# Real universities — mix of international + Indian (from actual labeled certificate data)
+# Institutions from real_certs/metadata.jsonl are marked with [real]
 University of Oxford
 University of Cambridge
 Harvard University
@@ -44,6 +45,57 @@ University of Manchester
 Durham University
 University of Warwick
 Monash University
+# Real cert institutions [real]
+Vel Tech Rangarajan Dr. Sagunthala R&D Institute of Science and Technology
+Nootan College of Nursing
+N. C. Bodiwala & M. C. Desai Commerce College
+Maharashtra Academy of Naval Education and Training
+California State University
+H. K. Arts College
+Carnegie Mellon University
+Sri Krishnadevaraya University
+Cochin University of Science and Technology
+Arizona State University
+Nagpur University
+University of St Andrews
+Birla Vishwakarma Mahavidyalaya
+Kaloji Narayana Rao University of Health Sciences
+Model Institute of Engineering & Technology
+Anna University
+Gujarat University
+Horizon College of Business & Technology
+Saurashtra University
+Dhaka International University
+Indira Gandhi National Open University
+University of Calicut
+The Open University
+Visvesvaraya Technological University
+Gulbarga University
+Manjushree Research Institute of Ayurvedic Science
+Bakatiya University
+West Bengal University of Technology
+Maulana Abul Kalam Azad University of Technology
+Cezpur University
+Vidyasagar University
+Indian School of Technology and Management
+The Indian Institute of Business Management and Studies
+Bharti Vidyapeeth's Institute of Management and Entrepreneurship Development
+Amity University
+Rajiv Gandhi University of Health Sciences
+Mahatma Gandhi University
+Uttar Pradesh Technical University
+Jawaharlal Nehru Technological University
+Andhra University
+Solapur University
+Baburao Patil College of Arts and Science
+The University of Queensland
+K. D. Polytechnic
+Shri Siddhartha Institute of Technology
+Bharath University
+Northwestern University
+Shivaji University
+Meenakshi Academy of Higher Education and Research
+Canterbury University
 # Fictional universities (diverse naming styles to prevent memorization)
 Northfield University
 Westbrook Institute of Technology

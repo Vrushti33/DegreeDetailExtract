@@ -83,6 +83,7 @@ _DEGREES_NO_SPEC = {
 }
 
 # ── Degree names: (long form, short form) ─────────────────────────────────────
+_DEGREES = [
     ("Bachelor of Technology",                   "B.Tech."),
     ("Bachelor of Science",                       "B.Sc."),
     ("Bachelor of Commerce",                      "B.Com."),

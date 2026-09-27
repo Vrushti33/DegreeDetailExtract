@@ -1,14 +1,16 @@
-"""v3 Certificate Renderer — 36-template anti-overfitting pipeline.
+"""v4 Certificate Renderer — 46-template anti-overfitting pipeline.
 
-New templates (t29–t36) are weighted 3× more than original templates so the
-model is exposed primarily to the new, more realistic certificate styles.
+Template pools:
+  - 22 original templates (weight 1×)
+  - 6 v2 templates (weight 2×)
+  - 8 v3 templates (weight 3×)
+  - 10 v4 templates (weight 4×) — NEW: complex layouts matching real certs
 
-Usage
------
-    from generator.renderer_v3 import init_bg_pool, render_certificate_v3
-
-    init_bg_pool("/content/DegreeDetailExtract/real_certs")
-    img = render_certificate_v3(fields, augment=True)
+v4 renderer changes:
+  - 10 new complex templates (t37-t46): affiliated college, letterhead, seal,
+    multi-authority, bilingual header, table layout, dark band, two-column,
+    convocation, and scroll/ribbon styles.
+  - Augmentation pipeline is unchanged (v3 heavy augmentation).
 """
 
 import random
@@ -20,18 +22,21 @@ from PIL import Image
 from .templates    import TEMPLATES          # 22 original
 from .templates_v2 import TEMPLATES_V2      # 6 v2 templates
 from .templates_v3 import TEMPLATES_V3, BG_POOL as _V3_BG_POOL
+from .templates_v4 import TEMPLATES_V4      # 10 v4 templates — NEW
 import generator.templates_v2 as _tv2_module
 import generator.templates_v3 as _tv3_module
+import generator.templates_v4 as _tv4_module
 from .augment import augment_image
 
 
-# ── Combined pool: 22 original + 6 v2 + 8 v3 = 36 ───────────────────────────
-ALL_TEMPLATES = TEMPLATES + TEMPLATES_V2 + TEMPLATES_V3
+# ── Combined pool: 22 original + 6 v2 + 8 v3 + 10 v4 = 46 ──────────────────
+ALL_TEMPLATES = TEMPLATES + TEMPLATES_V2 + TEMPLATES_V3 + TEMPLATES_V4
 
 _WEIGHTS = (
     [1.0] * len(TEMPLATES) +    # original: 1×
     [2.0] * len(TEMPLATES_V2) + # v2:       2×
-    [3.0] * len(TEMPLATES_V3)   # v3:       3× (most realistic)
+    [3.0] * len(TEMPLATES_V3) + # v3:       3×
+    [4.0] * len(TEMPLATES_V4)   # v4:       4× (most realistic, newest)
 )
 
 
@@ -47,6 +52,9 @@ def init_bg_pool(real_certs_dir: str) -> int:
     _tv3_module.BG_POOL.clear()
     _tv3_module.BG_POOL.extend(pool)
 
+    _tv4_module.BG_POOL_V4.clear()
+    _tv4_module.BG_POOL_V4.extend(pool)
+
     return len(pool)
 
 
@@ -56,23 +64,30 @@ def render_certificate_v3(
     template_idx: Optional[int] = None,
     only_v3: bool = False,
     only_new: bool = False,
+    only_v4: bool = False,
 ) -> Image.Image:
-    """Render a single certificate using the v3 pipeline.
+    """Render a single certificate using the v4 pipeline (46 templates).
 
     Parameters
     ----------
-    fields       : dict of 7 certificate fields (pass_class may be empty)
+    fields       : dict of 7 certificate fields (pass_class / student_name may be empty)
     augment      : apply heavy augmentation pipeline
     template_idx : fixed template index; None = weighted random
-    only_v3      : only pick from 8 new v3 templates
-    only_new     : only pick from 14 new templates (v2 + v3)
+    only_v3      : only pick from 8 v3 templates
+    only_new     : only pick from 24 new templates (v2 + v3 + v4)
+    only_v4      : only pick from 10 new v4 templates
     """
-    if only_v3:
+    if only_v4:
+        pool    = TEMPLATES_V4
+        weights = [4.0] * len(TEMPLATES_V4)
+    elif only_v3:
         pool    = TEMPLATES_V3
         weights = [3.0] * len(TEMPLATES_V3)
     elif only_new:
-        pool    = TEMPLATES_V2 + TEMPLATES_V3
-        weights = [2.0] * len(TEMPLATES_V2) + [3.0] * len(TEMPLATES_V3)
+        pool    = TEMPLATES_V2 + TEMPLATES_V3 + TEMPLATES_V4
+        weights = ([2.0] * len(TEMPLATES_V2) +
+                   [3.0] * len(TEMPLATES_V3) +
+                   [4.0] * len(TEMPLATES_V4))
     else:
         pool    = ALL_TEMPLATES
         weights = _WEIGHTS
@@ -92,7 +107,7 @@ def render_certificate_v3(
     return img
 
 
-# ── Augmentation pipeline (v3 — slightly heavier) ────────────────────────────
+# ── Augmentation pipeline (unchanged from v3) ─────────────────────────────────
 def _augment_heavy(pil_image: Image.Image) -> Image.Image:
     """Simulate phone-camera or scanner artefacts on the certificate."""
     try:

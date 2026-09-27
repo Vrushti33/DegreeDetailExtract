@@ -83,11 +83,12 @@ _DEGREES_NO_SPEC = {
 }
 
 # ── Degree names: (long form, short form) ─────────────────────────────────────
-_DEGREES = [
     ("Bachelor of Technology",                   "B.Tech."),
     ("Bachelor of Science",                       "B.Sc."),
     ("Bachelor of Commerce",                      "B.Com."),
     ("Bachelor of Arts",                          "B.A."),
+    ("Bachelor of Arts (Honours)",                "B.A. (Hons.)"),
+    ("Bachelor of Science (Honours)",             "B.Sc. (Hons.)"),
     ("Bachelor of Engineering",                   "B.E."),
     ("Bachelor of Computer Applications",         "BCA"),
     ("Bachelor of Business Administration",       "BBA"),
@@ -99,6 +100,7 @@ _DEGREES = [
     ("Bachelor of Pharmacy",                      "B.Pharm."),
     ("Bachelor of Physiotherapy",                 "BPT"),
     ("Bachelor of Ayurvedic Medicine & Surgery",  "BAMS"),
+    ("Bachelor of Biotechnology",                 "B.Biotech."),
     ("Master of Technology",                      "M.Tech."),
     ("Master of Science",                         "M.Sc."),
     ("Master of Business Administration",         "MBA"),
@@ -107,8 +109,12 @@ _DEGREES = [
     ("Master of Commerce",                        "M.Com."),
     ("Master of Engineering",                     "M.E."),
     ("Master of Laws",                            "LL.M."),
+    ("Master of Veterinary Science",              "M.V.Sc."),
+    ("Master of Computer Application",            "MCA"),
     ("Doctor of Philosophy",                      "Ph.D."),
     ("Doctor of Medicine",                        "M.D."),
+    ("Doctorate in Management Studies",           "Ph.D. (Management)"),
+    ("Ph. D.",                                    "Ph.D."),
     ("Diploma in Engineering",                    "Diploma"),
 ]
 
@@ -164,6 +170,20 @@ SPECIALIZATIONS = [
     "Film and Electronic Arts - Theory and Practice of Cinema",
     "Business Management (Economics)",
     "Animal Reproduction",
+]
+
+# Multi-subject specializations (as seen in real certs)
+_MULTI_SUBJECT_SPECS = [
+    "Mathematics, Physics, Chemistry",
+    "Chemistry, Botany, Biotechnology",
+    "Physics, Chemistry, Mathematics",
+    "Economics, Sociology, Political Science",
+    "History, Political Science, Economics",
+    "English, Hindi, History",
+    "Computer Science, Electronics, Mathematics",
+    "Zoology, Botany, Chemistry",
+    "Commerce, Economics, Accountancy",
+    "Psychology, Sociology, Philosophy",
 ]
 
 # ── Signing authority titles ───────────────────────────────────────────────────
@@ -355,17 +375,26 @@ def generate_fields() -> Dict[str, str]:
 
     Keys: student_name, university_name, course_name, specialization,
           pass_class (empty ~35% of time), authority_name, issue_date.
+
+    v6 additions:
+    - student_name empty ~5% of time (matches real certs where not visible)
+    - multi-subject specialization ~8% of time (Chemistry, Botany, Biotechnology etc.)
+    - is_college flag: ~20% of certs show a college affiliated to a parent university
+      (university_name = the college name, as annotated in real cert metadata)
     """
     degree_long, degree_short = random.choice(_DEGREES)
     # Long form 65%, short form 35%
     course_name = degree_long if random.random() > 0.35 else degree_short
 
-    # v5: specialization is empty for degrees that typically don't have it
+    # specialization: empty for degrees that typically don't have it
     if course_name in _DEGREES_NO_SPEC and random.random() < 0.75:
         specialization = ""
     elif random.random() < 0.15:
-        # Even for other degrees, ~15% have no specialization (General, Hons, etc.)
+        # Even for other degrees, ~15% have no specialization
         specialization = ""
+    elif random.random() < 0.08:
+        # ~8% multi-subject specialization (e.g. "Chemistry, Botany, Biotechnology")
+        specialization = random.choice(_MULTI_SUBJECT_SPECS)
     else:
         specialization = random.choice(SPECIALIZATIONS)
 
@@ -378,8 +407,14 @@ def generate_fields() -> Dict[str, str]:
     else:
         pass_class = random.choice(PASS_CLASSES)
 
+    # student_name: empty ~5% of time (name not visible/readable on real cert)
+    if random.random() < 0.05:
+        student_name = ""
+    else:
+        student_name = fake.name()
+
     return {
-        "student_name":    fake.name(),
+        "student_name":    student_name,
         "university_name": _random_university_name(),
         "course_name":     course_name,
         "specialization":  specialization,

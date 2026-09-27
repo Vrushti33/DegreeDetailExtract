@@ -3,21 +3,23 @@ DegreeDetailExtract — Local Training Script
 GPU: NVIDIA RTX 4050 Laptop 6GB GDDR6
 CPU: AMD R7 7735HS
 RAM: 16GB
+PyTorch: 2.9.1+cu130 (or any torch >= 2.0 with CUDA)
 
-Setup:
-    # 1. Install dependencies (run once in your conda/venv environment):
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-    pip install transformers>=4.37 datasets pillow faker tqdm
-    pip install albumentations editdistance
-
-    # 2. Install fonts (Windows — download manually):
-    # Download Noto fonts from https://fonts.google.com/noto and place in:
-    #   C:/Windows/Fonts/  (or use the FONT_DIR env var below)
+Setup (dependencies only — NO model download needed if using --model_path):
+    pip install transformers>=4.37 pillow faker tqdm albumentations editdistance sentencepiece
 
 Usage:
-    python train_local.py --data_dir ./dataset_v5 --ckpt_dir ./checkpoints_v5
-    python train_local.py --resume --data_dir ./dataset_v5 --ckpt_dir ./checkpoints_v5
-    python train_local.py --data_dir ./dataset_v5 --generate  # also generate dataset first
+    # Train using a local model folder (no internet needed for model download):
+    python train_local.py --model_path ./donut-base --data_dir ./dataset_v5
+
+    # Resume training:
+    python train_local.py --model_path ./donut-base --data_dir ./dataset_v5 --resume
+
+    # Generate dataset first, then train:
+    python train_local.py --model_path ./donut-base --data_dir ./dataset_v5 --generate
+
+    # Let it download the model automatically (needs internet):
+    python train_local.py --data_dir ./dataset_v5
 
 RTX 4050 6GB memory budget:
     - Model weights (fp16): ~0.7 GB
@@ -26,7 +28,7 @@ RTX 4050 6GB memory budget:
     - Total: ~4.6 GB — fits comfortably in 6 GB GDDR6
 
 Epoch timing (RTX 4050):
-    - 8,000 images × 87% train × 55% sampled = ~3,828 / batch 2 = ~1,914 batches
+    - 8,000 images x 87% train x 55% sampled = ~3,828 / batch 2 = ~1,914 batches
     - At ~1.5 batches/sec: ~21 min/epoch
     - 12 epochs = ~4.2 hours total (with early stopping, often fewer epochs)
 """
@@ -46,7 +48,7 @@ from PIL import Image
 
 # ── Config ────────────────────────────────────────────────────────────────────
 REPO_DIR     = Path(__file__).parent           # root of DegreeDetailExtract repo
-MODEL_NAME   = 'naver-clova-ix/donut-base'
+DEFAULT_MODEL = 'naver-clova-ix/donut-base'    # HF hub name OR local path
 FIELDS       = ['student_name', 'university_name', 'course_name',
                 'specialization', 'pass_class', 'authority_name', 'issue_date']
 
@@ -266,12 +268,13 @@ def train(args):
             latest_dir, config=config, ignore_mismatched_sizes=True
         ).to(device)
     else:
-        print(f'Loading base model: {MODEL_NAME}')
-        processor = DonutProcessor.from_pretrained(MODEL_NAME)
+        model_source = args.model_path if args.model_path else DEFAULT_MODEL
+        print(f'Loading base model from: {model_source}')
+        processor = DonutProcessor.from_pretrained(model_source)
         processor.image_processor.size = {'height': IMG_SIZE[0], 'width': IMG_SIZE[1]}
         processor.image_processor.do_align_long_axis = True
 
-        config = VisionEncoderDecoderConfig.from_pretrained(MODEL_NAME)
+        config = VisionEncoderDecoderConfig.from_pretrained(model_source)
         config.encoder.image_size = IMG_SIZE
         config.use_cache = False
 
@@ -283,7 +286,7 @@ def train(args):
         processor.tokenizer.add_special_tokens({'additional_special_tokens': SPECIAL_TOKENS})
 
         model = VisionEncoderDecoderModel.from_pretrained(
-            MODEL_NAME, config=config, ignore_mismatched_sizes=True
+            model_source, config=config, ignore_mismatched_sizes=True
         )
         model.decoder.resize_token_embeddings(len(processor.tokenizer))
         model.config.decoder_start_token_id = processor.tokenizer.convert_tokens_to_ids(['<s_cert>'])[0]
@@ -321,8 +324,12 @@ def train(args):
 
     optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                       lr=LR, weight_decay=0.05)
+    # Store initial_lr on param groups for warmup calculation
+    for pg in optimizer.param_groups:
+        pg['initial_lr'] = pg['lr']
     scheduler = CosineAnnealingLR(optimizer, T_max=max(1, total_steps), eta_min=1e-7)
-    scaler    = torch.cuda.amp.GradScaler() if device == 'cuda' else None
+    # Use new-style GradScaler (works with torch >= 2.0, avoids deprecation warning)
+    scaler    = torch.amp.GradScaler('cuda') if device == 'cuda' else None
 
     if args.resume and epoch_dirs:
         latest_dir = epoch_dirs[-1]
@@ -437,11 +444,14 @@ def train(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DegreeDetailExtract local training (RTX 4050 6GB)')
-    parser.add_argument('--data_dir',  default='./dataset_v5',    help='Path to dataset directory')
-    parser.add_argument('--ckpt_dir',  default='./checkpoints_v5', help='Path to checkpoint directory')
-    parser.add_argument('--resume',    action='store_true',         help='Resume from latest checkpoint')
-    parser.add_argument('--generate',  action='store_true',         help='Generate dataset before training')
-    parser.add_argument('--n',         type=int, default=8000,      help='Number of synthetic images to generate')
+    parser.add_argument('--data_dir',   default='./dataset_v5',       help='Path to dataset directory')
+    parser.add_argument('--ckpt_dir',   default='./checkpoints_v5',   help='Path to checkpoint directory')
+    parser.add_argument('--model_path', default=None,
+                        help='Path to local donut-base folder (skip HF download). '
+                             'E.g. --model_path ./donut-base')
+    parser.add_argument('--resume',     action='store_true',           help='Resume from latest checkpoint')
+    parser.add_argument('--generate',   action='store_true',           help='Generate dataset before training')
+    parser.add_argument('--n',          type=int, default=8000,        help='Number of synthetic images to generate')
     args = parser.parse_args()
 
     if args.generate:

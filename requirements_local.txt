@@ -1,8 +1,22 @@
-# ── Core inference ──────────────────────────────────────────────────────────────
-torch
-transformers>=4.40.0
-Pillow>=10.0.0
+# DegreeDetailExtract — Local Training Dependencies
+# For friend's laptop with PyTorch 2.9.1+cu130 already installed
+# DO NOT install torch/torchvision here — already installed
+
+# HuggingFace ecosystem
+transformers>=4.37.0
 sentencepiece
 
-# ── Demo UI ─────────────────────────────────────────────────────────────────────
-gradio>=4.0.0
+# Image processing
+Pillow>=9.0.0
+
+# Data generation
+faker>=18.0.0
+
+# Augmentation
+albumentations>=1.3.0
+
+# Evaluation metric
+editdistance
+
+# Progress bars
+tqdm

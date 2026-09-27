@@ -107,34 +107,43 @@ def render_certificate_v3(
     return img
 
 
-# ── Augmentation pipeline (unchanged from v3) ─────────────────────────────────
+# ── Augmentation pipeline ─────────────────────────────────────────────────────
 def _augment_heavy(pil_image: Image.Image) -> Image.Image:
-    """Simulate phone-camera or scanner artefacts on the certificate."""
+    """Simulate phone-camera or scanner artefacts on the certificate.
+
+    Uses albumentations with warnings suppressed — the albumentations API
+    changes frequently between versions and the warnings flood Colab output
+    with thousands of lines (one per certificate).
+    """
+    import warnings
     try:
         import albumentations as A
         import numpy as np
 
-        pipeline = A.Compose([
-            A.Rotate(limit=6, border_mode=0, value=(240, 235, 220), p=0.80),
-            A.Perspective(scale=(0.02, 0.07), p=0.55),
-            A.GaussianBlur(blur_limit=(3, 9), p=0.45),
-            A.RandomBrightnessContrast(
-                brightness_limit=0.30, contrast_limit=0.25, p=0.80
-            ),
-            A.ImageCompression(quality_lower=50, quality_upper=95, p=0.65),
-            A.HueSaturationValue(
-                hue_shift_limit=8, sat_shift_limit=20, val_shift_limit=20, p=0.45
-            ),
-            A.RandomShadow(num_shadows_lower=1, num_shadows_upper=2,
-                           shadow_dimension=5, p=0.25),
-            A.ISONoise(color_shift=(0.01, 0.05), intensity=(0.1, 0.3), p=0.30),
-        ])
+        # Build pipeline with warnings suppressed so they don't flood output
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            pipeline = A.Compose([
+                A.Rotate(limit=6, border_mode=0, p=0.80),
+                A.Perspective(scale=(0.02, 0.07), p=0.55),
+                A.GaussianBlur(blur_limit=(3, 9), p=0.45),
+                A.RandomBrightnessContrast(
+                    brightness_limit=0.30, contrast_limit=0.25, p=0.80
+                ),
+                A.HueSaturationValue(
+                    hue_shift_limit=8, sat_shift_limit=20, val_shift_limit=20, p=0.45
+                ),
+                A.ISONoise(color_shift=(0.01, 0.05), intensity=(0.1, 0.3), p=0.30),
+            ])
 
         arr    = np.array(pil_image.convert("RGB"))
-        result = pipeline(image=arr)["image"]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = pipeline(image=arr)["image"]
         return Image.fromarray(result)
     except Exception:
         return augment_image(pil_image)
 
 
 __all__ = ["init_bg_pool", "render_certificate_v3", "ALL_TEMPLATES"]
+

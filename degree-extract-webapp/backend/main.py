@@ -28,7 +28,8 @@ logger = logging.getLogger("degree-extract")
 #     (recommended for deployment — see backend/README.md for how to push
 #     your Colab checkpoint there)
 #   - a local directory path containing the saved checkpoint
-MODEL_SOURCE = os.environ.get("MODEL_SOURCE", "your-username/degree-extract-donut")
+#MODEL_SOURCE = os.environ.get("MODEL_SOURCE", "your-username/degree-extract-donut")
+MODEL_SOURCE = r"v:\Vrushti\Projects\DegreeDetailExtract\checkpoints\best_model"
 HF_TOKEN = os.environ.get("HF_TOKEN")  # only needed if MODEL_SOURCE is a private HF repo
 
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",")

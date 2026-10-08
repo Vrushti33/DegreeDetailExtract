@@ -5,6 +5,9 @@ torch==2.2.2
 transformers==4.44.2
 sentencepiece==0.2.0
 Pillow==10.4.0
-# v6 additions for bounding box localisation
+# v6/v7 additions for bounding box localisation
 pytesseract==0.3.13
 rapidfuzz==3.9.7
+# v7 additions for OCR image preprocessing
+opencv-python-headless==4.10.0.84
+numpy==1.26.4

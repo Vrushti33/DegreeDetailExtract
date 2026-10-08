@@ -23,6 +23,23 @@ import re
 import logging
 from typing import Dict, List, Optional, Tuple
 
+import sys
+import os
+import pathlib
+
+# ── Resolve project root so we can import generator.date_utils ─────────────────
+_BACKEND_DIR = pathlib.Path(__file__).resolve().parent
+_PROJECT_ROOT = _BACKEND_DIR.parent.parent   # degree-extract-webapp/backend -> project root
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+try:
+    from generator.date_utils import normalize_date_to_ddmmyyyy as _normalize_date_shared
+    _DATE_UTILS_AVAILABLE = True
+except ImportError:
+    _DATE_UTILS_AVAILABLE = False
+    logger_pre = None
+
 import torch
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -124,15 +141,16 @@ def _strip_xml_tags(text: str) -> str:
 
 def _normalize_date(raw: str) -> str:
     """
-    Attempt to normalize any extracted date to DD-MM-YYYY.
-    Returns raw value if normalization fails.
+    Normalize extracted date to DD-MM-YYYY.
+    v7: delegates to shared date_utils which handles written-out years.
     """
-    from datetime import datetime
-
-    raw = raw.strip()
-    if not raw:
+    if not raw or not raw.strip():
         return raw
-
+    if _DATE_UTILS_AVAILABLE:
+        return _normalize_date_shared(raw.strip())
+    # Fallback if date_utils not importable
+    from datetime import datetime
+    raw = raw.strip()
     patterns = [
         "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d",
         "%d %B %Y", "%B %d, %Y", "%d %b %Y", "%b %d, %Y",
@@ -141,23 +159,9 @@ def _normalize_date(raw: str) -> str:
     ]
     for fmt in patterns:
         try:
-            dt = datetime.strptime(raw, fmt)
-            return dt.strftime("%d-%m-%Y")
+            return datetime.strptime(raw, fmt).strftime("%d-%m-%Y")
         except ValueError:
             continue
-
-    # Ordinal pattern
-    m = re.search(r"(\d+)(?:st|nd|rd|th)?\s+(?:day\s+of\s+)?(\w+),?\s+(\d{4})", raw, re.IGNORECASE)
-    if m:
-        day, month_str, year = m.group(1), m.group(2), m.group(3)
-        for fmt in ["%d %B %Y", "%d %b %Y"]:
-            try:
-                from datetime import datetime as _dt
-                dt = _dt.strptime(f"{day} {month_str} {year}", fmt)
-                return dt.strftime("%d-%m-%Y")
-            except ValueError:
-                continue
-
     return raw
 
 
@@ -203,12 +207,56 @@ def _run_donut(img: Image.Image) -> Dict[str, str]:
 
 # ── Tesseract OCR + bounding box localisation ──────────────────────────────────
 
+def _preprocess_for_ocr(img: Image.Image) -> Image.Image:
+    """
+    Preprocess certificate image for better Tesseract OCR accuracy on real photos.
+    Steps: upscale to 300 DPI equivalent, convert to grayscale, denoise, binarize.
+    """
+    try:
+        import numpy as np
+        import cv2
+        # 1. Upscale if small (Tesseract works best at 300 DPI / ~2000px height)
+        w, h = img.size
+        if h < 1800:
+            scale = 1800 / h
+            img = img.resize((int(w * scale), 1800), Image.LANCZOS)
+        # 2. Convert to grayscale
+        gray = np.array(img.convert("L"))
+        # 3. Denoise
+        gray = cv2.fastNlMeansDenoising(gray, h=10, templateWindowSize=7, searchWindowSize=21)
+        # 4. Adaptive binarization (handles uneven lighting on certificate photos)
+        binar = cv2.adaptiveThreshold(
+            gray, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+            blockSize=31, C=11
+        )
+        return Image.fromarray(binar).convert("RGB")
+    except Exception as e:
+        logger.warning("OCR preprocessing failed (%s), using original", e)
+        return img
+
+
 def _get_ocr_data(img: Image.Image) -> Optional[dict]:
-    """Run Tesseract on image, return word-level data dict."""
+    """Run Tesseract on image with preprocessing, return word-level data dict."""
     if not _TESSERACT_AVAILABLE:
         return None
     try:
-        data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT, lang="eng")
+        processed = _preprocess_for_ocr(img)
+        # PSM 6 = assume uniform block of text (works best for certificates)
+        custom_config = r"--oem 3 --psm 6 -l eng"
+        data = pytesseract.image_to_data(
+            processed,
+            output_type=pytesseract.Output.DICT,
+            config=custom_config
+        )
+        # Also scale bounding boxes back to original image coordinates
+        scale_x = img.width / processed.width
+        scale_y = img.height / processed.height
+        if abs(scale_x - 1.0) > 0.05 or abs(scale_y - 1.0) > 0.05:
+            data["left"]   = [int(x * scale_x) for x in data["left"]]
+            data["top"]    = [int(y * scale_y) for y in data["top"]]
+            data["width"]  = [int(w * scale_x) for w in data["width"]]
+            data["height"] = [int(h * scale_y) for h in data["height"]]
         return data
     except Exception as e:
         logger.warning("Tesseract OCR failed: %s", e)
@@ -216,14 +264,25 @@ def _get_ocr_data(img: Image.Image) -> Optional[dict]:
 
 
 def _fuzzy_score(a: str, b: str) -> float:
-    """Simple character-level Jaccard similarity for fuzzy matching."""
+    """Fuzzy similarity for matching extracted field values against OCR word spans."""
     a, b = a.lower().strip(), b.lower().strip()
     if not a or not b:
         return 0.0
-    # Try exact substring match first
+    # Exact substring match: high confidence
     if a in b or b in a:
-        return 1.0
-    # N-gram overlap
+        return 0.95
+    # Use rapidfuzz for better fuzzy matching if available
+    try:
+        from rapidfuzz import fuzz
+        # Partial ratio works well when field value is a substring of the OCR span
+        return max(
+            fuzz.ratio(a, b) / 100.0,
+            fuzz.partial_ratio(a, b) / 100.0,
+            fuzz.token_sort_ratio(a, b) / 100.0,
+        )
+    except ImportError:
+        pass
+    # Fallback: trigram Jaccard
     def ngrams(s, n=3):
         return set(s[i:i+n] for i in range(len(s) - n + 1)) if len(s) >= n else {s}
     a_ng, b_ng = ngrams(a), ngrams(b)
@@ -232,6 +291,47 @@ def _fuzzy_score(a: str, b: str) -> float:
     intersection = len(a_ng & b_ng)
     union = len(a_ng | b_ng)
     return intersection / union if union else 0.0
+
+
+def _get_date_search_candidates(date_str: str) -> List[str]:
+    """Generate potential surface text forms for OCR matching from a date string."""
+    candidates = [date_str]
+    m = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$", date_str)
+    if m:
+        d = int(m.group(1))
+        month_num = int(m.group(2))
+        y = m.group(3)
+        months = [
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december"
+        ]
+        if 1 <= month_num <= 12:
+            m_name = months[month_num - 1]
+            m_short = m_name[:3]
+            candidates.extend([
+                f"{d} {m_name} {y}",
+                f"{d}th {m_name} {y}",
+                f"{d}st {m_name} {y}",
+                f"{d}nd {m_name} {y}",
+                f"{d}rd {m_name} {y}",
+                f"{m_name} {d} {y}",
+                f"{m_name} {d}, {y}",
+                f"{d} {m_short} {y}",
+                f"{m_short} {d} {y}",
+                f"{d:02d}/{month_num:02d}/{y}",
+                f"{d:02d}-{month_num:02d}-{y}",
+                f"{m_name} {y}",
+                f"{m_name}",
+            ])
+            ord_words = {
+                1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth",
+                18: "eighteenth", 19: "nineteenth", 20: "twentieth", 21: "twenty first",
+                24: "twenty fourth", 25: "twenty fifth", 29: "twenty ninth",
+            }
+            if d in ord_words:
+                candidates.append(f"{ord_words[d]} day of {m_name}")
+                candidates.append(f"{ord_words[d]} {m_name}")
+    return candidates
 
 
 def _find_field_boxes(
@@ -267,21 +367,25 @@ def _find_field_boxes(
         if not field_val or len(field_val) < 2:
             continue
 
-        # Build sliding windows of 1–8 consecutive words
+        search_targets = [field_val]
+        if field_name == "issue_date":
+            search_targets.extend(_get_date_search_candidates(field_val))
+
         best_score = 0.4  # minimum threshold
         best_span = None
 
-        field_words = field_val.lower().split()
-        max_window = min(len(field_words) + 3, 10)
+        for target in search_targets:
+            target_words = target.lower().split()
+            max_window = min(len(target_words) + 3, 12)
 
-        for window_size in range(1, max_window + 1):
-            for start_idx in range(len(words) - window_size + 1):
-                span_words = words[start_idx:start_idx + window_size]
-                span_text = " ".join(w["text"] for w in span_words)
-                score = _fuzzy_score(field_val, span_text)
-                if score > best_score:
-                    best_score = score
-                    best_span = span_words
+            for window_size in range(1, max_window + 1):
+                for start_idx in range(len(words) - window_size + 1):
+                    span_words = words[start_idx:start_idx + window_size]
+                    span_text = " ".join(w["text"] for w in span_words)
+                    score = _fuzzy_score(target, span_text)
+                    if score > best_score:
+                        best_score = score
+                        best_span = span_words
 
         if best_span:
             x1 = min(w["left"] for w in best_span)

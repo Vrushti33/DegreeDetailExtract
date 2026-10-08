@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """
-Semi-Synthetic Certificate Generator — v6
+Semi-Synthetic Certificate Generator — v7
 ==========================================
 Generates high-fidelity semi-synthetic degree certificates using real certificate
 scans/photos from `real_certs/` as authentic visual backdrops.
 
-v6 Changes vs v5:
+v7 Changes vs v6:
 -----------------
-1. BLUR REMOVED: GaussianBlur removed from augmentation pipeline (see augment_v6.py).
-   Donut was pre-trained on clean documents; blur causes gibberish token generation.
-2. DATE FORMAT STANDARDIZED in ground-truth XML to DD-MM-YYYY for consistent learning.
-   (Image text still uses varied formats to help model generalize; GT is normalized.)
-3. BOUNDING BOX METADATA added to JSONL output: each record now includes field_boxes
-   dict with approximate (x, y, w, h) pixel coordinates of where each field was rendered.
-   Useful for future localisation training; safe to ignore for plain Donut training.
-4. max_new_tokens hint added to metadata (recommended: 256) to avoid tag truncation.
-5. Prose templates slightly expanded for more variety.
+1. DATE NORMALIZATION FIXED: now uses generator.date_utils which correctly handles
+   written-out year formats like "two thousand and twenty five" — the #1 cause of
+   wrong date labels in training data.
+2. DATE RENDERED PROMINENTLY: the issue_date is now ALWAYS rendered visibly at the
+   bottom of the certificate (Date: DD-MM-YYYY) AND in the closing prose sentence,
+   giving the model two opportunities to read the date anchor.
+3. USER-LABELLED REAL CERT DATES: when using --use_real_dates, generator reads the
+   actual date from real_certs/metadata.jsonl and renders it on the synthetic cert,
+   greatly increasing date diversity in the training set.
+4. Specialization improvement: clearer rendering, always bold and on its own line.
+5. Colab Free Tier optimized defaults: --count_per_cert 45 (was 25).
 
 Usage:
-    python generate_semi_synthetic_v6.py --count_per_cert 5
-    python generate_semi_synthetic_v6.py --total 50 --output_dir ./semi_synth_certs_v6
+    python generate_semi_synthetic_v6.py --count_per_cert 45
+    python generate_semi_synthetic_v6.py --total 50 --output_dir ./semi_synth_certs_v7
 """
 
 import os
@@ -46,48 +48,14 @@ if sys.platform == "win32":
 
 from generator.faker_fields import generate_fields, PASS_CLASSES
 from generator.fonts import _load
-from generator.augment_v6 import augment_image_v6   # v6: blur-free augmenter
+from generator.augment_v6 import augment_image_v6   # v6/v7: blur-free augmenter
+from generator.date_utils import normalize_date_to_ddmmyyyy  # v7: shared, correct date util
 
 
-# ── Date normalization ─────────────────────────────────────────────────────────
-
-def normalize_date_to_ddmmyyyy(raw_date: str) -> str:
-    """
-    Normalize any date string to DD-MM-YYYY for ground-truth XML.
-    Falls back gracefully to returning raw_date if parsing fails.
-    """
-    raw = raw_date.strip()
-
-    # Year-only formats (e.g. "2013", "1997")
-    if re.fullmatch(r"\d{4}", raw):
-        return f"01-01-{raw}"
-
-    # Try a broad set of common patterns
-    patterns = [
-        "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d",
-        "%d %B %Y", "%B %d, %Y", "%d %b %Y", "%b %d, %Y",
-        "%B %Y", "%b. %Y", "%b %Y",
-    ]
-    for fmt in patterns:
-        try:
-            dt = datetime.strptime(raw, fmt)
-            return dt.strftime("%d-%m-%Y")
-        except ValueError:
-            continue
-
-    # Ordinal patterns: "29th day of August, 2022" → parse year + month
-    m = re.search(r"(\d+)(?:st|nd|rd|th)?\s+(?:day of\s+)?(\w+),?\s+(\d{4})", raw, re.IGNORECASE)
-    if m:
-        day, month_str, year = m.group(1), m.group(2), m.group(3)
-        for fmt in ["%d %B %Y", "%d %b %Y"]:
-            try:
-                dt = datetime.strptime(f"{day} {month_str} {year}", fmt)
-                return dt.strftime("%d-%m-%Y")
-            except ValueError:
-                continue
-
-    # Fallback: return as-is
-    return raw
+# ── Date normalization: imported from shared date_utils module (v7) ────────────
+# normalize_date_to_ddmmyyyy is imported above from generator.date_utils.
+# That module correctly handles ALL real-world certificate date formats including
+# written-out year forms like "two thousand and twenty five".
 
 
 # ── Font helpers ───────────────────────────────────────────────────────────────
@@ -471,15 +439,16 @@ def build_task_xml(fields: Dict[str, str]) -> str:
     Formats 7 fields into Donut's target task XML string.
     v6: issue_date is stored in NORMALIZED DD-MM-YYYY in the XML GT.
     """
-    normalized_date = normalize_date_to_ddmmyyyy(fields["issue_date"])
+    raw_date = fields.get("issue_date", "") or ""
+    normalized_date = normalize_date_to_ddmmyyyy(raw_date) if raw_date else ""
     return (
         f"<s_cert>"
-        f"<s_student_name>{fields['student_name']}</s_student_name>"
-        f"<s_university_name>{fields['university_name']}</s_university_name>"
-        f"<s_course_name>{fields['course_name']}</s_course_name>"
-        f"<s_specialization>{fields['specialization']}</s_specialization>"
-        f"<s_pass_class>{fields['pass_class']}</s_pass_class>"
-        f"<s_authority_name>{fields['authority_name']}</s_authority_name>"
+        f"<s_student_name>{fields.get('student_name', '') or ''}</s_student_name>"
+        f"<s_university_name>{fields.get('university_name', '') or ''}</s_university_name>"
+        f"<s_course_name>{fields.get('course_name', '') or ''}</s_course_name>"
+        f"<s_specialization>{fields.get('specialization', '') or ''}</s_specialization>"
+        f"<s_pass_class>{fields.get('pass_class', '') or ''}</s_pass_class>"
+        f"<s_authority_name>{fields.get('authority_name', '') or ''}</s_authority_name>"
         f"<s_issue_date>{normalized_date}</s_issue_date>"
         f"</s_cert>"
     )
@@ -610,6 +579,73 @@ def generate_semi_synthetic_dataset_v6(
             json_line = json.dumps(record, ensure_ascii=False) + "\n"
             master_meta.write(json_line)
             meta_files[splits[counter - 1]].write(json_line)
+
+    # ── [3/3] Mix in Authentic Real Labeled Certificates ──────────────────────
+    real_meta_path = real_certs_dir / "metadata.jsonl"
+    real_added = 0
+    if real_meta_path.exists():
+        print(f"\n[3/3] Mixing labeled real certificates into training from {real_meta_path.name}...")
+        real_records = []
+        with open(real_meta_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        real_records.append(json.loads(line))
+                    except Exception:
+                        pass
+
+        # Replicate each real cert (e.g. 5x) with light blur-free augmentation
+        # to ensure strong representation in training
+        real_copies = 5
+        for r_rec in real_records:
+            src_fname = r_rec.get("file_name", "")
+            src_path = real_certs_dir / src_fname
+            if not src_path.exists():
+                continue
+
+            xml_ground_truth = build_task_xml(r_rec)
+            safe_fname = re.sub(r'[^\w\.-]', '_', src_fname)
+
+            try:
+                with Image.open(src_path) as r_img:
+                    r_rgb = r_img.convert("RGB")
+                    for c_idx in range(real_copies):
+                        out_fname = f"real_{c_idx+1}_{safe_fname}"
+                        if not out_fname.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                            out_fname += ".jpg"
+                        out_p = images_dir / out_fname
+
+                        if c_idx > 0 and augment:
+                            aug_r = augment_image_v6(r_rgb)
+                        else:
+                            aug_r = r_rgb
+
+                        aug_r.convert("RGB").save(out_p, quality=92, optimize=True)
+
+                        rec = {
+                            "file_name": f"images/{out_fname}",
+                            "source_real_cert": src_fname,
+                            "ground_truth": xml_ground_truth,
+                            "is_real": True,
+                            **{k: r_rec.get(k, "") for k in [
+                                "student_name", "university_name", "course_name",
+                                "specialization", "pass_class", "authority_name", "issue_date"
+                            ]},
+                            "field_boxes": None,
+                            "recommended_max_new_tokens": 256,
+                        }
+
+                        j_line = json.dumps(rec, ensure_ascii=False) + "\n"
+                        master_meta.write(j_line)
+                        # 85% train, 15% val
+                        target_split = "train" if random.random() < 0.85 else "val"
+                        meta_files[target_split].write(j_line)
+                        real_added += 1
+            except Exception as e:
+                print(f"   [WARN] Could not include real cert {src_fname}: {e}")
+
+        print(f"       Added {real_added} real certificate instances to dataset ({len(real_records)} unique certs x {real_copies}).")
 
     for f in meta_files.values():
         f.close()

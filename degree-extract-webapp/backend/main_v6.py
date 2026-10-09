@@ -207,197 +207,211 @@ def _run_donut(img: Image.Image) -> Dict[str, str]:
 
 # ── Tesseract OCR + bounding box localisation ──────────────────────────────────
 
-def _preprocess_for_ocr(img: Image.Image) -> Image.Image:
+def _get_ocr_words(img: Image.Image) -> List[dict]:
     """
-    Preprocess certificate image for better Tesseract OCR accuracy on real photos.
-    Steps: upscale to 300 DPI equivalent, convert to grayscale, denoise, binarize.
+    Extract word-level OCR tokens with coordinates scaled to original image dimensions.
+    Fast, robust, without heavy CPU denoising bottlenecks.
     """
-    try:
-        import numpy as np
-        import cv2
-        # 1. Upscale if small (Tesseract works best at 300 DPI / ~2000px height)
-        w, h = img.size
-        if h < 1800:
-            scale = 1800 / h
-            img = img.resize((int(w * scale), 1800), Image.LANCZOS)
-        # 2. Convert to grayscale
-        gray = np.array(img.convert("L"))
-        # 3. Denoise
-        gray = cv2.fastNlMeansDenoising(gray, h=10, templateWindowSize=7, searchWindowSize=21)
-        # 4. Adaptive binarization (handles uneven lighting on certificate photos)
-        binar = cv2.adaptiveThreshold(
-            gray, 255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
-            blockSize=31, C=11
-        )
-        return Image.fromarray(binar).convert("RGB")
-    except Exception as e:
-        logger.warning("OCR preprocessing failed (%s), using original", e)
-        return img
-
-
-def _get_ocr_data(img: Image.Image) -> Optional[dict]:
-    """Run Tesseract on image with preprocessing, return word-level data dict."""
     if not _TESSERACT_AVAILABLE:
-        return None
+        return []
+
     try:
-        processed = _preprocess_for_ocr(img)
-        # PSM 6 = assume uniform block of text (works best for certificates)
-        custom_config = r"--oem 3 --psm 6 -l eng"
+        from PIL import ImageOps
+        img = ImageOps.exif_transpose(img)
+        w, h = img.size
+        scale = 1.0
+
+        # Optimal resolution for Tesseract OCR is ~1600-2200px height
+        if h < 1600:
+            scale = 1600.0 / h
+            img_ocr = img.resize((int(w * scale), 1600), Image.LANCZOS)
+        elif h > 2400:
+            scale = 2400.0 / h
+            img_ocr = img.resize((int(w * scale), 2400), Image.LANCZOS)
+        else:
+            img_ocr = img
+
+        # PSM 3 handles sparse, multi-column certificate layouts much better than PSM 6
+        custom_config = r"--oem 3 --psm 3 -l eng"
         data = pytesseract.image_to_data(
-            processed,
+            img_ocr,
             output_type=pytesseract.Output.DICT,
             config=custom_config
         )
-        # Also scale bounding boxes back to original image coordinates
-        scale_x = img.width / processed.width
-        scale_y = img.height / processed.height
-        if abs(scale_x - 1.0) > 0.05 or abs(scale_y - 1.0) > 0.05:
-            data["left"]   = [int(x * scale_x) for x in data["left"]]
-            data["top"]    = [int(y * scale_y) for y in data["top"]]
-            data["width"]  = [int(w * scale_x) for w in data["width"]]
-            data["height"] = [int(h * scale_y) for h in data["height"]]
-        return data
+
+        words = []
+        inv_scale = 1.0 / scale
+        n = len(data["text"])
+        for i in range(n):
+            t = data["text"][i].strip()
+            clean = re.sub(r"[^\w]", "", t).lower()
+            if clean:
+                words.append({
+                    "raw": t,
+                    "clean": clean,
+                    "left": int(data["left"][i] * inv_scale),
+                    "top": int(data["top"][i] * inv_scale),
+                    "width": int(data["width"][i] * inv_scale),
+                    "height": int(data["height"][i] * inv_scale),
+                    "conf": int(data["conf"][i]) if "conf" in data else 50,
+                })
+        return words
     except Exception as e:
-        logger.warning("Tesseract OCR failed: %s", e)
+        logger.warning("OCR extraction failed: %s", e)
+        return []
+
+
+def _find_phrase_box(target_phrase: str, words: List[dict], min_score: float = 60.0) -> Optional[dict]:
+    """
+    Locates a multi-word phrase in the OCR words using token-span alignment.
+    Eliminates false matches on stop-words or 1-letter substrings.
+    """
+    if not target_phrase or not target_phrase.strip() or not words:
         return None
 
+    clean_target = re.sub(r"[^\w\s]", " ", target_phrase).lower().strip()
+    target_tokens = clean_target.split()
+    # Filter common salutations if other tokens exist
+    filtered = [t for t in target_tokens if t not in ["mr", "mrs", "ms", "dr", "shri", "smt"]]
+    tokens_to_match = filtered if filtered else target_tokens
 
-def _fuzzy_score(a: str, b: str) -> float:
-    """Fuzzy similarity for matching extracted field values against OCR word spans."""
-    a, b = a.lower().strip(), b.lower().strip()
-    if not a or not b:
-        return 0.0
-    # Exact substring match: high confidence
-    if a in b or b in a:
-        return 0.95
-    # Use rapidfuzz for better fuzzy matching if available
-    try:
-        from rapidfuzz import fuzz
-        # Partial ratio works well when field value is a substring of the OCR span
-        return max(
-            fuzz.ratio(a, b) / 100.0,
-            fuzz.partial_ratio(a, b) / 100.0,
-            fuzz.token_sort_ratio(a, b) / 100.0,
-        )
-    except ImportError:
-        pass
-    # Fallback: trigram Jaccard
-    def ngrams(s, n=3):
-        return set(s[i:i+n] for i in range(len(s) - n + 1)) if len(s) >= n else {s}
-    a_ng, b_ng = ngrams(a), ngrams(b)
-    if not a_ng or not b_ng:
-        return 0.0
-    intersection = len(a_ng & b_ng)
-    union = len(a_ng | b_ng)
-    return intersection / union if union else 0.0
+    target_str = " ".join(tokens_to_match)
+    k = len(tokens_to_match)
+    if k == 0:
+        return None
+
+    from rapidfuzz import fuzz
+
+    best_box = None
+    best_score = 0.0
+    best_text = ""
+
+    # Sliding window around the target length (k-1 to k+4)
+    min_w = max(1, k - 1)
+    max_w = min(len(words), k + 4)
+
+    for win_len in range(min_w, max_w + 1):
+        for i in range(len(words) - win_len + 1):
+            span = words[i:i + win_len]
+
+            # Verify that words in span belong to roughly the same line/area
+            tops = [w["top"] for w in span]
+            bottoms = [w["top"] + w["height"] for w in span]
+            if (max(bottoms) - min(tops)) > 150 and win_len > 1:
+                continue
+
+            span_str = " ".join(w["clean"] for w in span)
+            sort_score = fuzz.token_sort_ratio(target_str, span_str)
+            char_score = fuzz.ratio(target_str, span_str)
+            score = (sort_score * 0.7) + (char_score * 0.3)
+
+            # Slight penalty if window is much longer than target
+            if win_len > k:
+                score *= (0.95 ** (win_len - k))
+
+            if score > best_score and score >= min_score:
+                best_score = score
+                x1 = min(w["left"] for w in span)
+                y1 = min(w["top"] for w in span)
+                x2 = max(w["left"] + w["width"] for w in span)
+                y2 = max(w["top"] + w["height"] for w in span)
+                best_box = [x1, y1, x2 - x1, y2 - y1]
+                best_text = " ".join(w["raw"] for w in span)
+
+    return {"box": best_box, "score": best_score, "text": best_text} if best_box else None
 
 
-def _get_date_search_candidates(date_str: str) -> List[str]:
-    """Generate potential surface text forms for OCR matching from a date string."""
-    candidates = [date_str]
-    m = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$", date_str)
-    if m:
-        d = int(m.group(1))
-        month_num = int(m.group(2))
-        y = m.group(3)
-        months = [
-            "january", "february", "march", "april", "may", "june",
-            "july", "august", "september", "october", "november", "december"
-        ]
-        if 1 <= month_num <= 12:
-            m_name = months[month_num - 1]
-            m_short = m_name[:3]
-            candidates.extend([
-                f"{d} {m_name} {y}",
-                f"{d}th {m_name} {y}",
-                f"{d}st {m_name} {y}",
-                f"{d}nd {m_name} {y}",
-                f"{d}rd {m_name} {y}",
-                f"{m_name} {d} {y}",
-                f"{m_name} {d}, {y}",
-                f"{d} {m_short} {y}",
-                f"{m_short} {d} {y}",
-                f"{d:02d}/{month_num:02d}/{y}",
-                f"{d:02d}-{month_num:02d}-{y}",
-                f"{m_name} {y}",
-                f"{m_name}",
-            ])
-            ord_words = {
-                1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth",
-                18: "eighteenth", 19: "nineteenth", 20: "twentieth", 21: "twenty first",
-                24: "twenty fourth", 25: "twenty fifth", 29: "twenty ninth",
-            }
-            if d in ord_words:
-                candidates.append(f"{ord_words[d]} day of {m_name}")
-                candidates.append(f"{ord_words[d]} {m_name}")
-    return candidates
+def _find_date_box(date_str: str, words: List[dict]) -> Optional[dict]:
+    """
+    Finds the date on the certificate using component matching (day, month, year, 'Date:' anchor).
+    Works on numeric, abbreviated, and ceremonial written-out date expressions.
+    """
+    if not date_str or not date_str.strip() or not words:
+        return None
+
+    # 1. Direct phrase search first
+    res = _find_phrase_box(date_str, words, min_score=65.0)
+    if res:
+        return res
+
+    # 2. Parse date components (e.g., 24-05-2024, 16-09-2013, 05-04-2013)
+    m = re.search(r"(\d{1,2})[-/](\d{1,2})[-/](\d{4})", date_str)
+    day_str, month_num, year_str = m.groups() if m else ("", "", "")
+
+    month_names = {
+        "01": "january", "02": "february", "03": "march", "04": "april",
+        "05": "may", "06": "june", "07": "july", "08": "august",
+        "09": "september", "10": "october", "11": "november", "12": "december"
+    }
+    month_name = month_names.get(month_num, "")
+
+    best_box = None
+    best_score = 0.0
+    best_text = ""
+
+    for i, w in enumerate(words):
+        raw = w["raw"].lower()
+        score = 0
+        if year_str and year_str in raw:
+            score += 40
+        if day_str and (day_str in raw or (i > 0 and day_str in words[i-1]["raw"])):
+            score += 30
+        if month_name and (month_name in raw or month_name[:3] in raw):
+            score += 30
+        if "date" in raw or (i > 0 and "date" in words[i-1]["raw"].lower()):
+            score += 20
+        if re.search(r"\d{1,2}[-./]\d{1,2}", raw):
+            score += 20
+        if any(yw in raw for yw in ["thousand", "twenty", "twentieth"]):
+            score += 30
+
+        if score > best_score and score >= 50:
+            best_score = score
+            start_i = i
+            # Include preceding 'Date:' if adjacent on same line
+            if i > 0 and "date" in words[i-1]["raw"].lower() and abs(words[i-1]["top"] - w["top"]) < 25:
+                start_i = i - 1
+            span = words[start_i:i+1]
+            x1 = min(sw["left"] for sw in span)
+            y1 = min(sw["top"] for sw in span)
+            x2 = max(sw["left"] + sw["width"] for sw in span)
+            y2 = max(sw["top"] + sw["height"] for sw in span)
+            best_box = [x1, y1, x2 - x1, y2 - y1]
+            best_text = " ".join(sw["raw"] for sw in span)
+
+    return {"box": best_box, "score": best_score, "text": best_text} if best_box else None
 
 
 def _find_field_boxes(
     fields: Dict[str, str],
-    ocr_data: dict,
+    words: List[dict],
     img_w: int,
     img_h: int
 ) -> Dict[str, Optional[List[int]]]:
     """
-    Match extracted field values against OCR word bounding boxes.
-    Returns dict of field → [x, y, w, h] or None.
+    High-precision field localisation mapping extracted fields to bounding boxes.
     """
     boxes: Dict[str, Optional[List[int]]] = {f: None for f in FIELDS}
-
-    if ocr_data is None:
+    if not words:
         return boxes
 
-    n = len(ocr_data["text"])
-    words = [
-        {
-            "text": ocr_data["text"][i].strip(),
-            "left": ocr_data["left"][i],
-            "top": ocr_data["top"][i],
-            "width": ocr_data["width"][i],
-            "height": ocr_data["height"][i],
-            "conf": int(ocr_data["conf"][i]),
-        }
-        for i in range(n)
-        if ocr_data["text"][i].strip() and int(ocr_data["conf"][i]) > 30
-    ]
-
     for field_name, field_val in fields.items():
-        if not field_val or len(field_val) < 2:
+        if not field_val or len(field_val.strip()) < 2:
             continue
 
-        search_targets = [field_val]
         if field_name == "issue_date":
-            search_targets.extend(_get_date_search_candidates(field_val))
+            res = _find_date_box(field_val, words)
+        else:
+            res = _find_phrase_box(field_val, words)
 
-        best_score = 0.4  # minimum threshold
-        best_span = None
-
-        for target in search_targets:
-            target_words = target.lower().split()
-            max_window = min(len(target_words) + 3, 12)
-
-            for window_size in range(1, max_window + 1):
-                for start_idx in range(len(words) - window_size + 1):
-                    span_words = words[start_idx:start_idx + window_size]
-                    span_text = " ".join(w["text"] for w in span_words)
-                    score = _fuzzy_score(target, span_text)
-                    if score > best_score:
-                        best_score = score
-                        best_span = span_words
-
-        if best_span:
-            x1 = min(w["left"] for w in best_span)
-            y1 = min(w["top"] for w in best_span)
-            x2 = max(w["left"] + w["width"] for w in best_span)
-            y2 = max(w["top"] + w["height"] for w in best_span)
-            # Add small padding
-            pad = 4
-            x1 = max(0, x1 - pad)
-            y1 = max(0, y1 - pad)
-            x2 = min(img_w, x2 + pad)
-            y2 = min(img_h, y2 + pad)
+        if res and res.get("box"):
+            x, y, w, h = res["box"]
+            # Add subtle padding and clamp within image boundaries
+            pad = 5
+            x1 = max(0, x - pad)
+            y1 = max(0, y - pad)
+            x2 = min(img_w, x + w + pad)
+            y2 = min(img_h, y + h + pad)
             boxes[field_name] = [x1, y1, x2 - x1, y2 - y1]
 
     return boxes
@@ -498,7 +512,9 @@ async def extract(file: UploadFile = File(...)) -> dict:
         )
 
     try:
-        img = Image.open(io.BytesIO(raw)).convert("RGB")
+        from PIL import ImageOps
+        img = Image.open(io.BytesIO(raw))
+        img = ImageOps.exif_transpose(img).convert("RGB")
     except UnidentifiedImageError:
         raise HTTPException(
             status_code=400,
@@ -525,8 +541,8 @@ async def extract(file: UploadFile = File(...)) -> dict:
 
     if _TESSERACT_AVAILABLE:
         try:
-            ocr_data = _get_ocr_data(img)
-            field_boxes = _find_field_boxes(fields, ocr_data, img.width, img.height)
+            ocr_words = _get_ocr_words(img)
+            field_boxes = _find_field_boxes(fields, ocr_words, img.width, img.height)
             annotated_image_b64 = _draw_boxes_on_image(img, fields, field_boxes)
         except Exception:
             logger.exception("Bounding box annotation failed — returning fields without boxes")

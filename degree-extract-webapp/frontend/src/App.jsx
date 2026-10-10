@@ -33,9 +33,8 @@ function SealMark({ className = '' }) {
   )
 }
 
-function Dropzone({ onFile, disabled }) {
+function Dropzone({ onFile, disabled, onBrowse }) {
   const [isDragActive, setIsDragActive] = useState(false)
-  const inputRef = useRef(null)
 
   const handleDrop = useCallback(
     (e) => {
@@ -53,11 +52,9 @@ function Dropzone({ onFile, disabled }) {
       onDragOver={(e) => { e.preventDefault(); if (!disabled) setIsDragActive(true) }}
       onDragLeave={() => setIsDragActive(false)}
       onDrop={handleDrop}
-      onClick={() => !disabled && inputRef.current?.click()}
+      onClick={() => !disabled && onBrowse?.()}
       className={`group relative flex flex-col items-center justify-center gap-3 rounded-sm border-2 border-dashed px-8 py-16 text-center transition-colors ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'} ${isDragActive ? 'border-brass-bright bg-brass/5' : 'border-brass/40 hover:border-brass/70'}`}
     >
-      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
-        onChange={(e) => { const file = e.target.files?.[0]; if (file) onFile(file); e.target.value = '' }} />
       <SealMark className="h-10 w-10 text-brass/70" />
       <p className="font-body text-base text-parchment">Drop a certificate image here, or click to browse</p>
       <p className="font-body text-sm text-parchment/50">JPEG, PNG, or WebP up to 15MB</p>
@@ -90,13 +87,15 @@ function LedgerRow({ label, value, field, hasBbox }) {
   )
 }
 
-function ResultLedger({ result, onReset }) {
+function ResultLedger({ result, onChooseAnother, onExportCSV }) {
   const hasBbox = result.tesseract_available && result.field_boxes
   return (
     <div className="animate-reveal rounded-sm bg-parchment px-6 py-8 shadow-[0_1px_0_rgba(185,139,42,0.4)] sm:px-10 sm:py-10">
-      <div className="mb-6 flex items-center gap-3 text-brass-muted">
-        <SealMark className="h-7 w-7" />
-        <span className="font-body text-sm tracking-wide text-charcoal/50">Extracted details</span>
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-3 text-brass-muted">
+          <SealMark className="h-7 w-7" />
+          <span className="font-body text-sm tracking-wide text-charcoal/50">Extracted details</span>
+        </div>
       </div>
 
       {hasBbox && (
@@ -132,9 +131,25 @@ function ResultLedger({ result, onReset }) {
         </p>
       )}
 
-      <button onClick={onReset} className="mt-8 font-body text-sm text-brass-muted underline decoration-brass/40 underline-offset-4 hover:text-brass">
-        Extract another certificate
-      </button>
+      {/* Action buttons */}
+      <div className="mt-8 flex flex-col gap-3">
+        <button
+          onClick={onExportCSV}
+          className="flex w-full items-center justify-center gap-2 rounded-sm bg-charcoal px-4 py-3 font-body text-sm font-medium text-parchment shadow-sm transition-all hover:bg-charcoal/90 hover:shadow active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-brass"
+        >
+          <svg className="h-4 w-4 text-brass" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export the extracted fields in CSV
+        </button>
+
+        <button
+          onClick={onChooseAnother}
+          className="self-start font-body text-sm text-brass-muted underline decoration-brass/40 underline-offset-4 hover:text-brass"
+        >
+          Extract another certificate
+        </button>
+      </div>
     </div>
   )
 }
@@ -146,6 +161,7 @@ export default function App() {
   const [showAnnotated, setShowAnnotated] = useState(true)
   const [result, setResult] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
+  const fileInputRef = useRef(null)
 
   const handleFile = useCallback(async (file) => {
     const url = URL.createObjectURL(file)
@@ -183,123 +199,196 @@ export default function App() {
     setErrorMessage('')
   }, [])
 
-  if (status === 'idle') {
-    return (
-      <div className="min-h-screen bg-charcoal">
-        <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-12 px-6 py-16 sm:px-10">
-          <header className="flex items-center gap-3 text-brass">
-            <SealMark className="h-6 w-6" />
-            <span className="font-body text-sm tracking-wide text-parchment/60">DegreeDetailExtract</span>
-          </header>
-          <main className="grid flex-1 gap-12 lg:grid-cols-2 lg:items-start">
-            <div className="flex flex-col gap-8">
-              <div>
-                <h1 className="font-display text-4xl font-medium leading-tight text-parchment sm:text-5xl">Read any degree certificate.</h1>
-                <p className="mt-4 max-w-md font-body text-base text-parchment/60">
-                  Upload a photo or scan. Fields are extracted automatically, and highlighted on the certificate so you can verify each one.
-                </p>
-              </div>
-              <Dropzone onFile={handleFile} disabled={false} />
-            </div>
-            <div>
-              <div className="flex h-full min-h-[280px] items-center justify-center rounded-sm border border-parchment/10 px-8 py-16 text-center">
-                <p className="font-body text-sm text-parchment/35">Extracted fields will appear here once you upload a certificate.</p>
-              </div>
-            </div>
-          </main>
-        </div>
-      </div>
-    )
-  }
+  // Switches back to upload screen AND immediately triggers the native file upload dialog window
+  const handleChooseAnother = useCallback(() => {
+    handleReset()
+    // Reset file input value and trigger OS file picker window immediately
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+      fileInputRef.current.click()
+    }
+  }, [handleReset])
 
-  // Determine which image to show
-  const displayImage = showAnnotated && annotated ? annotated : preview
+  // Exports extracted details into a clean, formatted CSV and initiates download
+  const handleExportCSV = useCallback(() => {
+    if (!result || !result.fields) return
+
+    const rows = [
+      ['Field', 'Extracted Value'],
+      ...FIELD_LABELS.map(([key, label]) => [
+        label,
+        result.fields[key] || ''
+      ]),
+      [],
+      // Also append tabular row format for spreadsheet/database batch import
+      FIELD_LABELS.map(([_, label]) => label),
+      FIELD_LABELS.map(([key]) => result.fields[key] || '')
+    ]
+
+    const csvContent = rows
+      .map((row) =>
+        row
+          .map((cell) => {
+            const str = String(cell ?? '')
+            if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+              return `"${str.replace(/"/g, '""')}"`
+            }
+            return str
+          })
+          .join(',')
+      )
+      .join('\r\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const student = result.fields.student_name
+      ? result.fields.student_name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_')
+      : 'certificate'
+    link.setAttribute('href', url)
+    link.setAttribute('download', `${student}_extracted_fields.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }, [result])
 
   return (
-    <div className="min-h-screen bg-charcoal">
-      <div className="mx-auto flex min-h-screen max-w-7xl flex-col gap-8 px-6 py-12 sm:px-10">
-        <header className="flex items-center gap-3 text-brass">
-          <SealMark className="h-6 w-6" />
-          <span className="font-body text-sm tracking-wide text-parchment/60">DegreeDetailExtract</span>
-        </header>
+    <>
+      {/* Global hidden file input so dialog can be opened anytime from any button */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) handleFile(file)
+          e.target.value = ''
+        }}
+      />
 
-        <main className="grid flex-1 gap-8 lg:grid-cols-2 lg:items-start">
-
-          {/* Left: Certificate Image */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <p className="font-body text-xs uppercase tracking-widest text-parchment/40">Uploaded Certificate</p>
-
-              {/* Toggle between annotated and original */}
-              {annotated && status === 'done' && (
-                <div className="flex items-center gap-1 rounded-full border border-parchment/15 p-0.5">
-                  <button
-                    onClick={() => setShowAnnotated(true)}
-                    className={`rounded-full px-3 py-1 font-body text-xs transition-colors ${showAnnotated ? 'bg-brass text-charcoal' : 'text-parchment/50 hover:text-parchment'}`}
-                  >
-                    Highlighted
-                  </button>
-                  <button
-                    onClick={() => setShowAnnotated(false)}
-                    className={`rounded-full px-3 py-1 font-body text-xs transition-colors ${!showAnnotated ? 'bg-brass text-charcoal' : 'text-parchment/50 hover:text-parchment'}`}
-                  >
-                    Original
-                  </button>
+      {status === 'idle' ? (
+        <div className="min-h-screen bg-charcoal">
+          <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-12 px-6 py-16 sm:px-10">
+            <header className="flex items-center gap-3 text-brass">
+              <SealMark className="h-6 w-6" />
+              <span className="font-body text-sm tracking-wide text-parchment/60">DegreeDetailExtract</span>
+            </header>
+            <main className="grid flex-1 gap-12 lg:grid-cols-2 lg:items-start">
+              <div className="flex flex-col gap-8">
+                <div>
+                  <h1 className="font-display text-4xl font-medium leading-tight text-parchment sm:text-5xl">Read any degree certificate.</h1>
+                  <p className="mt-4 max-w-md font-body text-base text-parchment/60">
+                    Upload a photo or scan. Fields are extracted automatically, and highlighted on the certificate so you can verify each one.
+                  </p>
                 </div>
-              )}
-            </div>
-
-            <div className="relative overflow-hidden rounded-sm border border-parchment/15 bg-charcoal/60">
-              {displayImage && (
-                <img
-                  src={displayImage}
-                  alt={showAnnotated && annotated ? 'Certificate with highlighted fields' : 'Uploaded certificate'}
-                  className="w-full object-contain"
-                  style={{ maxHeight: '80vh' }}
-                />
-              )}
-
-              {/* Loading spinner overlay */}
-              {status === 'loading' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-charcoal/70 backdrop-blur-sm">
-                  <svg className="h-10 w-10 animate-spin text-brass/70" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="24" cy="24" r="20" stroke="currentColor" strokeWidth="3" strokeDasharray="90 30" />
-                  </svg>
-                  <p className="font-body text-sm text-parchment/70">Reading certificate...</p>
+                <Dropzone onFile={handleFile} disabled={false} onBrowse={() => fileInputRef.current?.click()} />
+              </div>
+              <div>
+                <div className="flex h-full min-h-[280px] items-center justify-center rounded-sm border border-parchment/10 px-8 py-16 text-center">
+                  <p className="font-body text-sm text-parchment/35">Extracted fields will appear here once you upload a certificate.</p>
                 </div>
-              )}
-            </div>
-
-            {/* Error message */}
-            {status === 'error' && (
-              <p className="rounded-sm border border-red-900/40 bg-red-900/10 px-4 py-3 font-body text-sm text-red-400">{errorMessage}</p>
-            )}
-
-            {/* Upload another / reset */}
-            {(status === 'done' || status === 'error') && (
-              <button onClick={handleReset} className="self-start font-body text-sm text-brass-muted underline decoration-brass/40 underline-offset-4 hover:text-brass">
-                Upload a different certificate
-              </button>
-            )}
-          </div>
-
-          {/* Right: Results ledger */}
-          <div className="sticky top-8">
-            {status === 'loading' && (
-              <div className="flex min-h-[280px] items-center justify-center rounded-sm border border-parchment/10 px-8 py-16 text-center">
-                <p className="font-body text-sm text-parchment/35">Extracting fields...</p>
               </div>
-            )}
-            {status === 'done' && result && <ResultLedger result={result} onReset={handleReset} />}
-            {status === 'error' && (
-              <div className="flex min-h-[280px] items-center justify-center rounded-sm border border-parchment/10 px-8 py-16 text-center">
-                <p className="font-body text-sm text-parchment/35">Could not extract fields. Try again with a clearer image.</p>
-              </div>
-            )}
+            </main>
           </div>
+        </div>
+      ) : (
+        <div className="min-h-screen bg-charcoal">
+          <div className="mx-auto flex min-h-screen max-w-7xl flex-col gap-8 px-6 py-12 sm:px-10">
+            <header className="flex items-center gap-3 text-brass">
+              <SealMark className="h-6 w-6" />
+              <span className="font-body text-sm tracking-wide text-parchment/60">DegreeDetailExtract</span>
+            </header>
 
-        </main>
-      </div>
-    </div>
+            <main className="grid flex-1 gap-8 lg:grid-cols-2 lg:items-start">
+
+              {/* Left: Certificate Image */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <p className="font-body text-xs uppercase tracking-widest text-parchment/40">Uploaded Certificate</p>
+
+                  {/* Toggle between annotated and original */}
+                  {annotated && status === 'done' && (
+                    <div className="flex items-center gap-1 rounded-full border border-parchment/15 p-0.5">
+                      <button
+                        onClick={() => setShowAnnotated(true)}
+                        className={`rounded-full px-3 py-1 font-body text-xs transition-colors ${showAnnotated ? 'bg-brass text-charcoal' : 'text-parchment/50 hover:text-parchment'}`}
+                      >
+                        Highlighted
+                      </button>
+                      <button
+                        onClick={() => setShowAnnotated(false)}
+                        className={`rounded-full px-3 py-1 font-body text-xs transition-colors ${!showAnnotated ? 'bg-brass text-charcoal' : 'text-parchment/50 hover:text-parchment'}`}
+                      >
+                        Original
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative overflow-hidden rounded-sm border border-parchment/15 bg-charcoal/60">
+                  {(showAnnotated && annotated ? annotated : preview) && (
+                    <img
+                      src={showAnnotated && annotated ? annotated : preview}
+                      alt={showAnnotated && annotated ? 'Certificate with highlighted fields' : 'Uploaded certificate'}
+                      className="w-full object-contain"
+                      style={{ maxHeight: '80vh' }}
+                    />
+                  )}
+
+                  {/* Loading spinner overlay */}
+                  {status === 'loading' && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-charcoal/70 backdrop-blur-sm">
+                      <svg className="h-10 w-10 animate-spin text-brass/70" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="24" cy="24" r="20" stroke="currentColor" strokeWidth="3" strokeDasharray="90 30" />
+                      </svg>
+                      <p className="font-body text-sm text-parchment/70">Reading certificate...</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Error message */}
+                {status === 'error' && (
+                  <p className="rounded-sm border border-red-900/40 bg-red-900/10 px-4 py-3 font-body text-sm text-red-400">{errorMessage}</p>
+                )}
+
+                {/* Upload another / reset */}
+                {(status === 'done' || status === 'error') && (
+                  <button
+                    onClick={handleChooseAnother}
+                    className="self-start font-body text-sm text-brass-muted underline decoration-brass/40 underline-offset-4 hover:text-brass"
+                  >
+                    Extract from another certificate
+                  </button>
+                )}
+              </div>
+
+              {/* Right: Results ledger */}
+              <div className="sticky top-8">
+                {status === 'loading' && (
+                  <div className="flex min-h-[280px] items-center justify-center rounded-sm border border-parchment/10 px-8 py-16 text-center">
+                    <p className="font-body text-sm text-parchment/35">Extracting fields...</p>
+                  </div>
+                )}
+                {status === 'done' && result && (
+                  <ResultLedger
+                    result={result}
+                    onChooseAnother={handleChooseAnother}
+                    onExportCSV={handleExportCSV}
+                  />
+                )}
+                {status === 'error' && (
+                  <div className="flex min-h-[280px] items-center justify-center rounded-sm border border-parchment/10 px-8 py-16 text-center">
+                    <p className="font-body text-sm text-parchment/35">Could not extract fields. Try again with a clearer image.</p>
+                  </div>
+                )}
+              </div>
+
+            </main>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

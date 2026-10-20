@@ -5,10 +5,9 @@
 [![HuggingFace Transformers](https://img.shields.io/badge/%F0%9F%A4%97%20Transformers-Donut-FFD21E?style=flat)](https://huggingface.co/docs/transformers/model_doc/donut)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React + Vite](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB?style=flat&logo=react&logoColor=black)](https://vitejs.dev/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 > **B.Tech. Project-2 (Semester VII)**  
-> **Author:** Shah Vrushti T. (ID: 23ITUOS122 / IT127)  
+> **Author:** Shah Vrushti T. (ID: 23ITUOS122 )  
 > **Supervisor:** Dr. Harshadkumar B. Prajapati, Professor, Department of Information Technology  
 > **Institution:** Dharmsinh Desai University (DDU), Nadiad, Gujarat, India  
 

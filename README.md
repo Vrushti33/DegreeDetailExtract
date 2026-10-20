@@ -246,17 +246,3 @@ Returns backend health status, CUDA acceleration status, and active model versio
 | **Issue / Passing Date**| 74.1% | 86.5% | **95.6%** |
 
 ---
-
-## 📜 License & Citation
-
-This project is released under the **MIT License**.
-
-If you use or build upon this work, please cite:
-```bibtex
-@misc{shah2025degreedetailextract,
-  author = {Shah, Vrushti T. and Prajapati, Harshadkumar B.},
-  title = {Degree Certificate Detail Extraction using End-to-End Document Understanding Transformers},
-  year = {2025},
-  institution = {Dharmsinh Desai University, Department of Information Technology}
-}
-```
